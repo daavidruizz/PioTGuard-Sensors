@@ -10,3 +10,11 @@
     //TOPICS
 #define MQTT_TOPIC_SUB  "topic_a_suscribirse"
 #define MQTT_TOPIC_PUB  "topic_a_publicar"
+
+//=======================SENSORS===============================
+#define DOOR_SENSOR "Door Sensor"
+#define PRESENCE_SENSOR "Presence Sensor"
+#define GAS_SENSOR "Gas Sensor"
+
+
+//========================PINOUT===============================

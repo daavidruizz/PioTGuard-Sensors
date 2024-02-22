@@ -1,24 +1,194 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "mqtt_client.h"
 #include "defines.h"
+#include "time.h"
+#include "sys/time.h"
+#include "driver/adc.h"
+#include <lwip/apps/sntp.h>
+#include <cJSON.h>
+
+#include "esp_system.h" // Para esp_chip_info
+#include "spi_flash_mmap.h" // Para spi_flash_get_chip_size, spi_flash_get_free_size
+#include "esp_task_wdt.h" // Para esp_task_wdt_get_task_load
 
 static const char *TAG_MQTT = "MQTT";
 static const char *TAG_WIFI = "Wifi";
+static const char *TAG_NTP = "NTP";
 
 int mqtt_connected = 0;
 
 //================================================================
-//==========================SENSORS===============================
+//======================SHARED MEMORY=============================
+//================================================================
+typedef struct {
+    time_t time;
+    char sensor[12];
+
+} SharedMemory;
+
+typedef struct {
+    char dateTimeString[64];
+    char sensor[12];
+    float value;
+
+} SharedMemoryLOG;
+SharedMemoryLOG *sharedLog = NULL;
+
+QueueHandle_t dataQ;
+QueueHandle_t dataLOG;
+
+
+
+//================================================================
+//===================DATE TIME / JSON=============================
 //================================================================
 
-void sensorTask(void *pvParameters){
+void getDateTimeString(char *dateTimeString) {
+    time_t now;
+    struct tm timeinfo;
 
+    // Obtener el tiempo actual
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+    // Formatear la fecha y hora como una cadena
+    strftime(dateTimeString, 64, "%Y-%m-%d %H:%M:%S", &timeinfo);
+}
+
+void DateTime(){
+    sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    sntp_setservername(0, "pool.ntp.org");
+    sntp_init(); //Horario verano
+    time_t t = 0;
+    struct tm timeinfo = { 0 };
+    
+    int8_t max = 0;
+    while (timeinfo.tm_year < (2016 - 1900)) { //116
+        if(max > 9){
+            ESP_LOGE(TAG_NTP, "REINICIANDO. MAXIMOS INTENTOS ALCANZADOS");
+            return;
+        }
+        ESP_LOGI(TAG_NTP, "Esperando la sincronización con el servidor NTP...");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        time(&t);
+        localtime_r(&t, &timeinfo);
+        max++;
+    }
+    ESP_LOGI(TAG_NTP, "Fecha y hora actualizada: %s", asctime(&timeinfo));
+}
+
+//Liberar memoria siempre que se utilice
+    //cJSON_Delete(json);
+    //free(json_str);
+
+void jsonSrtInit(cJSON** json){
+    *json = cJSON_CreateObject();
+    cJSON_AddStringToObject(*json, "sensor", "");
+    cJSON_AddNumberToObject(*json, "value", 0.0);
+    cJSON_AddStringToObject(*json, "date", "");
+}
+
+//PRIMERO NECESITAMOS ELIMINAR LOS CAMPOS, PARA LUEGO ACTUALIZARLOS. SE DEBE A LA LIBERACION DE MEMORIA
+void jsonStrLog(cJSON* json,char** json_str, const SharedMemoryLOG* data){
+    //Eliminamos
+    cJSON_DeleteItemFromObject(json, "sensor");
+    cJSON_DeleteItemFromObject(json, "value");
+    cJSON_DeleteItemFromObject(json, "date");
+    //Añadimos
+    cJSON_AddStringToObject(json, "sensor", data->sensor);
+    cJSON_AddNumberToObject(json, "value", data->value);
+    cJSON_AddStringToObject(json, "date", data->dateTimeString);
+    *json_str = cJSON_Print(json);
+}
+
+//================================================================
+//==========================SENSORS===============================
+//================================================================
+//TODO SI SE QUEDA SIN MEMORIA REINICIAR
+void print_memory_usage() {
+    //esp_chip_info_t chip_info;
+    //esp_chip_info(&chip_info);
+    
+    // Obtener el uso de la memoria RAM libre
+    uint32_t free_ram = esp_get_free_heap_size();
+    
+    // Obtener el uso de la memoria flash
+    //uint32_t total_flash = spi_flash_get_chip_size();
+    //uint32_t free_flash = spi_flash_get_free_size();
+    //uint32_t used_flash = total_flash - free_flash;
+    
+    // Nota: La función esp_task_wdt_get_task_load() no es adecuada para obtener el uso de CPU.
+    // Necesitarías un enfoque diferente para obtener el uso de CPU, como medir el tiempo de ejecución de tus tareas.
+    // Aquí se muestra un marcador de posición para la carga de CPU.
+    //uint32_t cpu_load =   0; // Este valor debe ser calculado de manera diferente
+
+    // Imprimir los resultados con el formato correcto
+    printf("Uso de memoria RAM libre: %lu bytes\n", free_ram);
+    //printf("Uso de memoria flash: %lu bytes usados de %lu bytes totales\n", used_flash, total_flash);
+    //printf("Uso de CPU: %lu%%\n", cpu_load);
+}
+
+void DoorSensorTask(void *pvParameters){
+    // Inicializar ADC2
+    //adc2_config_channel_atten(ADC2_CHANNEL_0, ADC_ATTEN_DB_0);  // Configurar la atenuación del canal ADC2_0
+
+    // Leer valores analógicos de forma continua
+    while(1) {
+        // Leer el valor analógico del sensor
+        //uint32_t adc_value = 0;
+        //adc2_get_raw(ADC2_CHANNEL_0, ADC_WIDTH_BIT_12, &adc_value);
+        //printf("Valor del sensor: %ld\n", adc_value);
+        print_memory_usage();
+        vTaskDelay(pdMS_TO_TICKS(10000)); // Esperar 1 segundo entre lecturas
+    }
+}
+
+void PresenceSensorTask(void *pvParameters){
+    
+    // Configurar el pin del sensor como entrada
+    gpio_config_t io_conf;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask = (1ULL << GPIO_NUM_13);
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    gpio_config(&io_conf);
+
+    
+    while(1){
+        int motionDetected = gpio_get_level(GPIO_NUM_13);
+        if (motionDetected) {
+            printf("¡Movimiento detectado!\n");
+        } else {
+            printf("No se detecta movimiento.\n");
+        }
+        vTaskDelay(pdMS_TO_TICKS(3000)); // Esperar 1 segundo entre lecturas
+    }
+}
+
+void GasSensorTask(void *pvParameters){
+    // Configurar el canal ADC
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    adc1_config_channel_atten(ADC1_CHANNEL_0, ADC_ATTEN_DB_11);
+
+    while(1) {
+        // Leer el valor analógico del sensor MQ-2
+        uint32_t adc_value = adc1_get_raw(ADC1_CHANNEL_0);
+        
+        // Calcular la concentración de gas basada en el valor del ADC
+        // (requiere calibración específica para tu sensor)
+        sharedLog->value = (float) adc_value;
+        // Imprimir el valor de concentración de gas
+        //printf("Concentración de gas: %ld ppm\n", adc_value);
+
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo entre lecturas
+    }
 }
 
 //================================================================
@@ -84,10 +254,22 @@ void mqttTask(void *pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(200)); // Esperar 200 milisegundos
     }
     
+
+    cJSON* json = NULL;
+    char* json_str = NULL;
+    //Inicializamos json
+    jsonSrtInit(&json);
+
     esp_mqtt_client_subscribe(client, "/server",  0);
+    
     while (1){
-        esp_mqtt_client_publish(client, "/sensor/info", "Hello from ESP32, MQTT!",  0,  0,  0);
+        getDateTimeString(sharedLog->dateTimeString);
+        strcpy(sharedLog->sensor, GAS_SENSOR);
+        jsonStrLog(json, &json_str, sharedLog);
+        esp_mqtt_client_publish(client, "/sensors/log", json_str,  0,  0,  0);
         vTaskDelay(200);
+        free(json_str);
+        json_str = NULL;
     }
     
 }
@@ -115,11 +297,13 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 
 
 void app_main(){
-    esp_log_level_set("*", ESP_LOG_DEBUG);
+    
+    esp_log_level_set(TAG_WIFI, ESP_LOG_DEBUG);
+    sharedLog = (SharedMemoryLOG *)malloc(sizeof(SharedMemoryLOG));
+    
     //================================================================
     //=======================WIFI INITIALITATION======================
     //================================================================
-
     // Inicialización del sistema de almacenamiento no volátil (NVS)
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -151,10 +335,14 @@ void app_main(){
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-//TODO MEMORIA COMPARTIDA
+    //Actualizar fecha y hora
+    DateTime();
     //MQTT Task en el Core0
     xTaskCreatePinnedToCore(&mqttTask, "mqtt_task", 4096, NULL, 5, NULL, 0);
+    
+    //Sensors Tasks
+    xTaskCreatePinnedToCore(&DoorSensorTask, "DoorSensorTask",4096, NULL, 5, NULL, 1); 
+    xTaskCreatePinnedToCore(&GasSensorTask, "GasSensorTask",4096, NULL, 5, NULL, 1); 
+    xTaskCreatePinnedToCore(&PresenceSensorTask, "PresenceSensorTask",4096, NULL, 5, NULL, 1); 
 
-    //Sensor Task
-    xTaskCreatePinnedToCore(&sensorTask, "sensorTask",4096, NULL, 5, NULL, 1); 
 }
