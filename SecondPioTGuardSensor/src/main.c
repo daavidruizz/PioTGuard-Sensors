@@ -138,7 +138,7 @@ void DoorSensorTask(void *pvParameters){
         xQueueSend(logQ, sharedLog, portMAX_DELAY);
         xSemaphoreGive(mutexSensorLog);
 
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo entre lecturas
+        vTaskDelay(pdMS_TO_TICKS(250)); // Esperar 1 segundo entre lecturas
     }
 }
 
@@ -153,7 +153,7 @@ void PresenceSensorTask(void *pvParameters){
         sharedLog->value = motionDetected;
         xQueueSend(logQ, sharedLog, portMAX_DELAY);
         xSemaphoreGive(mutexSensorLog);
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo entre lecturas
+        vTaskDelay(pdMS_TO_TICKS(500)); // Esperar 1 segundo entre lecturas
     }
 }
 
@@ -171,7 +171,7 @@ void GasSensorTask(void *pvParameters){
         xQueueSend(logQ, sharedLog, portMAX_DELAY);
         xSemaphoreGive(mutexSensorLog);
 
-        vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo entre lecturas
+        vTaskDelay(pdMS_TO_TICKS(750)); // Esperar 1 segundo entre lecturas
     }
 }
 
