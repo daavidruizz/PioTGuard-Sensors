@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -13,10 +14,8 @@
 #include "driver/adc.h"
 #include <lwip/apps/sntp.h>
 #include <cJSON.h>
-
 #include "esp_system.h" // Para esp_chip_info
-#include "spi_flash_mmap.h" // Para spi_flash_get_chip_size, spi_flash_get_free_size
-#include "esp_task_wdt.h" // Para esp_task_wdt_get_task_load
+
 
 static const char *TAG_MQTT = "MQTT";
 static const char *TAG_WIFI = "Wifi";
@@ -35,14 +34,16 @@ typedef struct {
 
 typedef struct {
     char dateTimeString[64];
-    char sensor[12];
+    char sensor[16];
+    int8_t sensorID;
     float value;
 
 } SharedMemoryLOG;
 SharedMemoryLOG *sharedLog = NULL;
+SemaphoreHandle_t mutexSensorLog;
+QueueHandle_t logQ;
 
 QueueHandle_t dataQ;
-QueueHandle_t dataLOG;
 
 
 
@@ -92,6 +93,7 @@ void jsonSrtInit(cJSON** json){
     *json = cJSON_CreateObject();
     cJSON_AddStringToObject(*json, "sensor", "");
     cJSON_AddNumberToObject(*json, "value", 0.0);
+    cJSON_AddNumberToObject(*json, "sensorID", -1);
     cJSON_AddStringToObject(*json, "date", "");
 }
 
@@ -101,9 +103,11 @@ void jsonStrLog(cJSON* json,char** json_str, const SharedMemoryLOG* data){
     cJSON_DeleteItemFromObject(json, "sensor");
     cJSON_DeleteItemFromObject(json, "value");
     cJSON_DeleteItemFromObject(json, "date");
+    cJSON_DeleteItemFromObject(json, "sensorID");
     //Añadimos
     cJSON_AddStringToObject(json, "sensor", data->sensor);
     cJSON_AddNumberToObject(json, "value", data->value);
+    cJSON_AddNumberToObject(json, "sensorID", data->sensorID);
     cJSON_AddStringToObject(json, "date", data->dateTimeString);
     *json_str = cJSON_Print(json);
 }
@@ -113,79 +117,59 @@ void jsonStrLog(cJSON* json,char** json_str, const SharedMemoryLOG* data){
 //================================================================
 //TODO SI SE QUEDA SIN MEMORIA REINICIAR
 void print_memory_usage() {
-    //esp_chip_info_t chip_info;
-    //esp_chip_info(&chip_info);
-    
     // Obtener el uso de la memoria RAM libre
     uint32_t free_ram = esp_get_free_heap_size();
     
-    // Obtener el uso de la memoria flash
-    //uint32_t total_flash = spi_flash_get_chip_size();
-    //uint32_t free_flash = spi_flash_get_free_size();
-    //uint32_t used_flash = total_flash - free_flash;
-    
-    // Nota: La función esp_task_wdt_get_task_load() no es adecuada para obtener el uso de CPU.
-    // Necesitarías un enfoque diferente para obtener el uso de CPU, como medir el tiempo de ejecución de tus tareas.
-    // Aquí se muestra un marcador de posición para la carga de CPU.
-    //uint32_t cpu_load =   0; // Este valor debe ser calculado de manera diferente
-
     // Imprimir los resultados con el formato correcto
     printf("Uso de memoria RAM libre: %lu bytes\n", free_ram);
-    //printf("Uso de memoria flash: %lu bytes usados de %lu bytes totales\n", used_flash, total_flash);
-    //printf("Uso de CPU: %lu%%\n", cpu_load);
 }
 
 void DoorSensorTask(void *pvParameters){
-    // Inicializar ADC2
-    //adc2_config_channel_atten(ADC2_CHANNEL_0, ADC_ATTEN_DB_0);  // Configurar la atenuación del canal ADC2_0
 
-    // Leer valores analógicos de forma continua
     while(1) {
-        // Leer el valor analógico del sensor
-        //uint32_t adc_value = 0;
-        //adc2_get_raw(ADC2_CHANNEL_0, ADC_WIDTH_BIT_12, &adc_value);
-        //printf("Valor del sensor: %ld\n", adc_value);
-        print_memory_usage();
-        vTaskDelay(pdMS_TO_TICKS(10000)); // Esperar 1 segundo entre lecturas
+        int level = gpio_get_level(DOOR_SERNSOR_PIN);
+        
+        xSemaphoreTake(mutexSensorLog, portMAX_DELAY);
+        getDateTimeString(sharedLog->dateTimeString);
+        strcpy(sharedLog->sensor, DOOR_SENSOR);
+        sharedLog->sensorID = DOOR_ID;
+        sharedLog->value = level;
+        //printf("Valor %d\n", level);
+        xQueueSend(logQ, sharedLog, portMAX_DELAY);
+        xSemaphoreGive(mutexSensorLog);
+
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo entre lecturas
     }
 }
 
 void PresenceSensorTask(void *pvParameters){
     
-    // Configurar el pin del sensor como entrada
-    gpio_config_t io_conf;
-    io_conf.mode = GPIO_MODE_INPUT;
-    io_conf.pin_bit_mask = (1ULL << GPIO_NUM_13);
-    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-    gpio_config(&io_conf);
-
-    
     while(1){
-        int motionDetected = gpio_get_level(GPIO_NUM_13);
-        if (motionDetected) {
-            printf("¡Movimiento detectado!\n");
-        } else {
-            printf("No se detecta movimiento.\n");
-        }
-        vTaskDelay(pdMS_TO_TICKS(3000)); // Esperar 1 segundo entre lecturas
+        int motionDetected = gpio_get_level(PRESENCE_SENSOR_PIN);
+        xSemaphoreTake(mutexSensorLog, portMAX_DELAY);
+        getDateTimeString(sharedLog->dateTimeString);
+        strcpy(sharedLog->sensor, PRESENCE_SENSOR);
+        sharedLog->sensorID = PRESENCE_ID;
+        sharedLog->value = motionDetected;
+        xQueueSend(logQ, sharedLog, portMAX_DELAY);
+        xSemaphoreGive(mutexSensorLog);
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo entre lecturas
     }
 }
 
 void GasSensorTask(void *pvParameters){
-    // Configurar el canal ADC
-    adc1_config_width(ADC_WIDTH_BIT_12);
-    adc1_config_channel_atten(ADC1_CHANNEL_0, ADC_ATTEN_DB_11);
 
     while(1) {
-        // Leer el valor analógico del sensor MQ-2
-        uint32_t adc_value = adc1_get_raw(ADC1_CHANNEL_0);
-        
-        // Calcular la concentración de gas basada en el valor del ADC
-        // (requiere calibración específica para tu sensor)
+        uint32_t adc_value = adc1_get_raw(GAS_SENSOR_PIN);
+
+        xSemaphoreTake(mutexSensorLog, portMAX_DELAY);
+        getDateTimeString(sharedLog->dateTimeString);
+        strcpy(sharedLog->sensor, GAS_SENSOR);
+        sharedLog->sensorID = GAS_ID;
         sharedLog->value = (float) adc_value;
-        // Imprimir el valor de concentración de gas
         //printf("Concentración de gas: %ld ppm\n", adc_value);
+        xQueueSend(logQ, sharedLog, portMAX_DELAY);
+        xSemaphoreGive(mutexSensorLog);
 
         vTaskDelay(pdMS_TO_TICKS(1000)); // Esperar 1 segundo entre lecturas
     }
@@ -194,6 +178,35 @@ void GasSensorTask(void *pvParameters){
 //================================================================
 //=============================MQTT===============================
 //================================================================
+
+void publishValues(esp_mqtt_client_handle_t client, SharedMemoryLOG *copySharedLog, cJSON *json, char *json_str){
+    
+    if(xQueueReceive(logQ, copySharedLog, portMAX_DELAY) == pdTRUE){    
+
+        jsonStrLog(json, &json_str, copySharedLog);
+        switch (copySharedLog->sensorID){
+        case DOOR_ID:
+            esp_mqtt_client_publish(client, DOOR_TOPIC_VALUE, json_str,  0,  0,  0);
+            break;
+        
+        case GAS_ID:
+            esp_mqtt_client_publish(client, GAS_TOPIC_VALUE, json_str,  0,  0,  0);
+            break;
+
+        case PRESENCE_ID:
+            esp_mqtt_client_publish(client, PRESENCE_TOPIC_VALUE, json_str,  0,  0,  0);
+            break;
+
+        default:
+            ESP_LOGE(TAG_MQTT, "Error ID Sensors");
+            printf("ID %d\n", copySharedLog->sensorID);
+            break;
+        }
+        free(json_str);
+        json_str = NULL;
+    }
+}
+
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
     esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
 
@@ -205,7 +218,9 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             break;
         case MQTT_EVENT_DISCONNECTED:
             printf("MQTT desconectado del broker\n");
-            mqtt_connected = 0;
+            //mqtt_connected = 0;
+            vTaskDelay(100);
+            esp_restart();
             break;
         case MQTT_EVENT_SUBSCRIBED:
             printf("MQTT suscrito a un tema\n");
@@ -254,24 +269,18 @@ void mqttTask(void *pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(200)); // Esperar 200 milisegundos
     }
     
-
     cJSON* json = NULL;
     char* json_str = NULL;
     //Inicializamos json
     jsonSrtInit(&json);
 
     esp_mqtt_client_subscribe(client, "/server",  0);
-    
+    esp_mqtt_client_publish(client, "/sensors/log", "DEBUG", 5, 0, 0);
+    SharedMemoryLOG *copySharedLog = (SharedMemoryLOG *)malloc(sizeof(SharedMemoryLOG));
+
     while (1){
-        getDateTimeString(sharedLog->dateTimeString);
-        strcpy(sharedLog->sensor, GAS_SENSOR);
-        jsonStrLog(json, &json_str, sharedLog);
-        esp_mqtt_client_publish(client, "/sensors/log", json_str,  0,  0,  0);
-        vTaskDelay(200);
-        free(json_str);
-        json_str = NULL;
+        publishValues(client, copySharedLog, json, json_str);
     }
-    
 }
 
 //================================================================
@@ -297,14 +306,18 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 
 
 void app_main(){
-    
+
+    // Si quiero ver la ram, colocar esto en un while 1 print_memory_usage();
     esp_log_level_set(TAG_WIFI, ESP_LOG_DEBUG);
+
     sharedLog = (SharedMemoryLOG *)malloc(sizeof(SharedMemoryLOG));
-    
+    mutexSensorLog = xSemaphoreCreateMutex();
+    logQ = xQueueCreate(6, sizeof(SharedMemoryLOG));
+
     //================================================================
     //=======================WIFI INITIALITATION======================
     //================================================================
-    // Inicialización del sistema de almacenamiento no volátil (NVS)
+    //almacenamiento no volátil (NVS)
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -312,10 +325,10 @@ void app_main(){
     }
     ESP_ERROR_CHECK(ret);
 
-    // Inicialización del stack de TCP/IP
+    //stack de TCP/IP
     ESP_ERROR_CHECK(esp_netif_init());
 
-    // Inicialización del controlador WiFi
+    //controlador WiFi
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_create_default_wifi_sta();
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -335,14 +348,35 @@ void app_main(){
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    //Actualizar fecha y hora
+    //fecha y hora
     DateTime();
-    //MQTT Task en el Core0
-    xTaskCreatePinnedToCore(&mqttTask, "mqtt_task", 4096, NULL, 5, NULL, 0);
+
+    //================================================================
+    //==========================GPIO CONFIG===========================
+    //================================================================
+    // Configurar el pìnes como entrada digital
+    gpio_config_t io_conf;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    io_conf.pin_bit_mask = (1ULL << DOOR_SERNSOR_PIN) | (1ULL << PRESENCE_SENSOR_PIN);
+    gpio_config(&io_conf);
+
+    //ADC1
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    adc1_config_channel_atten(GAS_SENSOR_PIN, ADC_ATTEN_DB_11);
+
+
+    //================================================================
+    //=============================TASKS==============================
+    //================================================================
+
     
     //Sensors Tasks
     xTaskCreatePinnedToCore(&DoorSensorTask, "DoorSensorTask",4096, NULL, 5, NULL, 1); 
     xTaskCreatePinnedToCore(&GasSensorTask, "GasSensorTask",4096, NULL, 5, NULL, 1); 
     xTaskCreatePinnedToCore(&PresenceSensorTask, "PresenceSensorTask",4096, NULL, 5, NULL, 1); 
 
+    //MQTT Task en el Core0
+    xTaskCreatePinnedToCore(&mqttTask, "mqtt_task", 4096, NULL, 5, NULL, 0);
 }
