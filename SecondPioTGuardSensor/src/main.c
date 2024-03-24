@@ -6,6 +6,7 @@
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_tls.h"
 #include "nvs_flash.h"
 #include "mqtt_client.h"
 #include "defines.h"
@@ -15,6 +16,7 @@
 #include <lwip/apps/sntp.h>
 #include <cJSON.h>
 #include "esp_system.h" // Para esp_chip_info
+#include "mbedtls/debug.h"
 
 
 static const char *TAG_MQTT = "MQTT";
@@ -22,6 +24,22 @@ static const char *TAG_WIFI = "Wifi";
 static const char *TAG_NTP = "NTP";
 
 int mqtt_connected = 0;
+
+//================================================================
+//============================DEBUG===============================
+//================================================================
+
+
+//================================================================
+//=======================CERTIFICATES=============================
+//================================================================
+
+extern const uint8_t MQTTca_crt_start[] asm("_binary_MQTTca_crt_start");
+extern const uint8_t MQTTca_crt_end[]   asm("_binary_MQTTca_crt_end");
+extern const uint8_t sensorclient_crt_start[] asm("_binary_sensorclient_crt_start");
+extern const uint8_t sensorclient_crt_end[]   asm("_binary_sensorclient_crt_end");
+extern const uint8_t sensorclient_key_start[] asm("_binary_sensorclient_key_start");
+extern const uint8_t sensorclient_key_end[]   asm("_binary_sensorclient_key_end");
 
 //================================================================
 //======================SHARED MEMORY=============================
@@ -44,7 +62,6 @@ SemaphoreHandle_t mutexSensorLog;
 QueueHandle_t logQ;
 
 QueueHandle_t dataQ;
-
 
 
 //================================================================
@@ -138,7 +155,7 @@ void DoorSensorTask(void *pvParameters){
         xQueueSend(logQ, sharedLog, portMAX_DELAY);
         xSemaphoreGive(mutexSensorLog);
 
-        vTaskDelay(pdMS_TO_TICKS(250)); // Esperar 1 segundo entre lecturas
+        vTaskDelay(pdMS_TO_TICKS(100)); // Esperar 1 segundo entre lecturas
     }
 }
 
@@ -153,7 +170,7 @@ void PresenceSensorTask(void *pvParameters){
         sharedLog->value = motionDetected;
         xQueueSend(logQ, sharedLog, portMAX_DELAY);
         xSemaphoreGive(mutexSensorLog);
-        vTaskDelay(pdMS_TO_TICKS(500)); // Esperar 1 segundo entre lecturas
+        vTaskDelay(pdMS_TO_TICKS(100)); // Esperar 1 segundo entre lecturas
     }
 }
 
@@ -171,7 +188,7 @@ void GasSensorTask(void *pvParameters){
         xQueueSend(logQ, sharedLog, portMAX_DELAY);
         xSemaphoreGive(mutexSensorLog);
 
-        vTaskDelay(pdMS_TO_TICKS(750)); // Esperar 1 segundo entre lecturas
+        vTaskDelay(pdMS_TO_TICKS(200)); // Esperar 1 segundo entre lecturas
     }
 }
 
@@ -204,6 +221,7 @@ void publishValues(esp_mqtt_client_handle_t client, SharedMemoryLOG *copySharedL
         }
         free(json_str);
         json_str = NULL;
+         vTaskDelay(pdMS_TO_TICKS(400));
     }
 }
 
@@ -248,11 +266,20 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
 void mqttTask(void *pvParameters) {
     const esp_mqtt_client_config_t mqtt_cfg = {
+        .credentials.client_id = "ESP32",
         .broker.address.uri = MQTT_BROKER,
         .broker.address.port = MQTT_PORT,
-        //.broker.address.transport = MQTT_TRANSPORT_OVER_TCP, 
-        .broker.address.path = NULL,
-        .broker.address.hostname = NULL
+        
+        .broker.verification.common_name = SERVER_CN,
+        .broker.verification.certificate = (const char *) MQTTca_crt_start,
+        .credentials.authentication.certificate = (const char *) sensorclient_crt_start,
+        .credentials.authentication.key = (const char *) sensorclient_key_start,
+        
+
+        .credentials.username = MQTT_USERNAME,
+        .credentials.authentication.password = MQTT_PASSWORD, 
+        .credentials.authentication.use_secure_element = false,
+        
     };
     esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
 
@@ -308,11 +335,16 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 void app_main(){
 
     // Si quiero ver la ram, colocar esto en un while 1 print_memory_usage();
-    esp_log_level_set(TAG_WIFI, ESP_LOG_DEBUG);
+    //================================================================
+    //==========================DEBUG CONFIG==========================
+    //================================================================
+
+    //=================================================================
+
 
     sharedLog = (SharedMemoryLOG *)malloc(sizeof(SharedMemoryLOG));
     mutexSensorLog = xSemaphoreCreateMutex();
-    logQ = xQueueCreate(6, sizeof(SharedMemoryLOG));
+    logQ = xQueueCreate(3, sizeof(SharedMemoryLOG));
 
     //================================================================
     //=======================WIFI INITIALITATION======================

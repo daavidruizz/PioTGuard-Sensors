@@ -5,6 +5,7 @@
         "esp_task_wdt.h": "c",
         "esp_system.h": "c",
         "esp_idf_version.h": "c",
-        "spi_flash_mmap.h": "c"
+        "spi_flash_mmap.h": "c",
+        "adc.h": "c"
     }
 }

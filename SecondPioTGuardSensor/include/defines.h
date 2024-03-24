@@ -3,10 +3,11 @@
 #define WIFI_PASS   "cocinalimpia"
 
 //=====================MQTT DEFINES============================
-#define MQTT_BROKER     "mqtt://192.168.1.211" //"mqtt://rzzz.ddns.net"
-#define MQTT_PORT       1883
-#define MQTT_USERNAME   "PioTGuardSensors"
-#define MQTT_PASSWORD   "***"
+#define MQTT_BROKER     "mqtts://192.168.1.211" //"mqtts://rzzz.ddns.net" 
+#define MQTT_PORT       8883
+#define MQTT_USERNAME   "sensor"
+#define MQTT_PASSWORD   "140516"
+#define SERVER_CN       "server.example.com"
     //TOPICS
 #define GAS_TOPIC_VALUE         "/sensor/gas/value"
 #define DOOR_TOPIC_VALUE        "/sensor/door/value"
@@ -26,3 +27,6 @@
 #define GAS_SENSOR_PIN      ADC1_CHANNEL_0
 #define DOOR_SERNSOR_PIN    GPIO_NUM_4
 #define PRESENCE_SENSOR_PIN GPIO_NUM_13
+
+//========================DEBUG================================
+#define MBEDTLS_DEBUG_LEVEL 3
