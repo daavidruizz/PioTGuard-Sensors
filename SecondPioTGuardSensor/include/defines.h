@@ -1,18 +1,30 @@
 //=====================WIFI DEFINES============================
-#define WIFI_SSID   "rzzzJOQ24G"
-#define WIFI_PASS   "cocinalimpia"
+#define WIFI_SSID   "VIRGIN-telco_EBDF"
+#define WIFI_PASS   "T7RU44YTLT"
 
 //=====================MQTT DEFINES============================
-#define MQTT_BROKER     "mqtts://192.168.1.211" //"mqtts://rzzz.ddns.net" 
+#define MQTT_BROKER     "mqtts://rzzz.ddns.net" //"mqtts://192.168.1.211" 
 #define MQTT_PORT       8883
 #define MQTT_USERNAME   "sensor"
 #define MQTT_PASSWORD   "140516"
 #define SERVER_CN       "server.example.com"
     //TOPICS
-#define GAS_TOPIC_VALUE         "/sensor/gas/value"
-#define DOOR_TOPIC_VALUE        "/sensor/door/value"
-#define PRESENCE_TOPIC_VALUE    "/sensor/presence/value"
+#define GAS_TOPIC_VALUE         "/info/sensor/gas"
+#define DOOR_TOPIC_VALUE        "/info/sensor/door"
+#define PRESENCE_TOPIC_VALUE    "/info/sensor/presence"
 
+#define DEVICE_INFO             "/info/device"
+#define ALARM_TRIGGER           "/info/alarm"
+
+#define CFG_ALARM               "/config/alarm"
+#define CFG_DOOR                "/config/sensor/door"
+#define CFG_GAS                 "/config/sensor/gas"
+#define CFG_PRESENCE            "/config/sensor/presence"
+#define CFG_ALL                 "/config/sensor/all"
+#define REBOOT                  "/config/device/reboot"
+
+#define DEVICE_SENSORS          "/info/device/sensors"
+#define REQ_INFO                "/info/device/req"
 
 //=======================SENSORS===============================
 #define DOOR_ID             0

@@ -31,9 +31,24 @@ int mqtt_connected = 0;
 
 
 //================================================================
+//=======================CFG SETTINGS=============================
+//================================================================
+int8_t INFO_REQ = 0;
+int8_t REBOOT_FLAG = 0;
+
+typedef struct {
+   int8_t alarmSet;
+   int8_t doorSet;
+   int8_t presenceSet;
+   int8_t gasSet;
+} SharedSettings;
+
+SharedSettings *settings = NULL;
+SemaphoreHandle_t mutexSettings;
+
+//================================================================
 //=======================CERTIFICATES=============================
 //================================================================
-
 extern const uint8_t MQTTca_crt_start[] asm("_binary_MQTTca_crt_start");
 extern const uint8_t MQTTca_crt_end[]   asm("_binary_MQTTca_crt_end");
 extern const uint8_t sensorclient_crt_start[] asm("_binary_sensorclient_crt_start");
@@ -41,33 +56,28 @@ extern const uint8_t sensorclient_crt_end[]   asm("_binary_sensorclient_crt_end"
 extern const uint8_t sensorclient_key_start[] asm("_binary_sensorclient_key_start");
 extern const uint8_t sensorclient_key_end[]   asm("_binary_sensorclient_key_end");
 
+
 //================================================================
 //======================SHARED MEMORY=============================
 //================================================================
-typedef struct {
-    time_t time;
-    char sensor[12];
-
-} SharedMemory;
-
 typedef struct {
     char dateTimeString[64];
     char sensor[16];
     int8_t sensorID;
     float value;
-
+    int8_t enabled;
 } SharedMemoryLOG;
+
 SharedMemoryLOG *sharedLog = NULL;
+
 SemaphoreHandle_t mutexSensorLog;
+
 QueueHandle_t logQ;
-
 QueueHandle_t dataQ;
-
 
 //================================================================
 //===================DATE TIME / JSON=============================
 //================================================================
-
 void getDateTimeString(char *dateTimeString) {
     time_t now;
     struct tm timeinfo;
@@ -89,9 +99,9 @@ void DateTime(){
     
     int8_t max = 0;
     while (timeinfo.tm_year < (2016 - 1900)) { //116
-        if(max > 9){
+        if(max > 15){
             ESP_LOGE(TAG_NTP, "REINICIANDO. MAXIMOS INTENTOS ALCANZADOS");
-            return;
+            esp_restart();
         }
         ESP_LOGI(TAG_NTP, "Esperando la sincronización con el servidor NTP...");
         vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -106,22 +116,49 @@ void DateTime(){
     //cJSON_Delete(json);
     //free(json_str);
 
-void jsonSrtInit(cJSON** json){
-    *json = cJSON_CreateObject();
-    cJSON_AddStringToObject(*json, "sensor", "");
-    cJSON_AddNumberToObject(*json, "value", 0.0);
-    cJSON_AddNumberToObject(*json, "sensorID", -1);
-    cJSON_AddStringToObject(*json, "date", "");
+/*ALL cJSON initialisation */
+void jsonSrtInit(cJSON **jsonDebug, cJSON **jsonSettings){
+    
+    *jsonDebug = cJSON_CreateObject();
+    cJSON_AddNumberToObject(*jsonDebug, "enabled", -1);
+    cJSON_AddStringToObject(*jsonDebug, "sensor", "");
+    cJSON_AddNumberToObject(*jsonDebug, "value", 0.0);
+    cJSON_AddNumberToObject(*jsonDebug, "sensorID", -1);
+    cJSON_AddStringToObject(*jsonDebug, "date", "");
+
+    *jsonSettings = cJSON_CreateObject();
+    cJSON_AddNumberToObject(*jsonSettings, "alarm", 0);
+    cJSON_AddNumberToObject(*jsonSettings, "door", 0);
+    cJSON_AddNumberToObject(*jsonSettings, "gas", 0);
+    cJSON_AddNumberToObject(*jsonSettings, "presence", 0);
 }
 
 //PRIMERO NECESITAMOS ELIMINAR LOS CAMPOS, PARA LUEGO ACTUALIZARLOS. SE DEBE A LA LIBERACION DE MEMORIA
+void jsonSrtSettings(cJSON* json,char** json_str, const SharedSettings* settings){
+    //Eliminamos
+    cJSON_DeleteItemFromObject(json, "alarm");
+    cJSON_DeleteItemFromObject(json, "door");
+    cJSON_DeleteItemFromObject(json, "gas");
+    cJSON_DeleteItemFromObject(json, "presence");
+    //Añadimos
+    xSemaphoreTake(mutexSettings, portMAX_DELAY);
+    cJSON_AddNumberToObject(json, "alarm", settings->alarmSet);
+    cJSON_AddNumberToObject(json, "door", settings->doorSet);
+    cJSON_AddNumberToObject(json, "gas", settings->gasSet);
+    cJSON_AddNumberToObject(json, "presence", settings->presenceSet);
+    *json_str = cJSON_Print(json);
+    xSemaphoreGive(mutexSettings);
+}
+
 void jsonStrLog(cJSON* json,char** json_str, const SharedMemoryLOG* data){
     //Eliminamos
+    cJSON_DeleteItemFromObject(json, "enabled");
     cJSON_DeleteItemFromObject(json, "sensor");
     cJSON_DeleteItemFromObject(json, "value");
     cJSON_DeleteItemFromObject(json, "date");
     cJSON_DeleteItemFromObject(json, "sensorID");
     //Añadimos
+    cJSON_AddNumberToObject(json, "enabled", data->enabled);
     cJSON_AddStringToObject(json, "sensor", data->sensor);
     cJSON_AddNumberToObject(json, "value", data->value);
     cJSON_AddNumberToObject(json, "sensorID", data->sensorID);
@@ -132,6 +169,11 @@ void jsonStrLog(cJSON* json,char** json_str, const SharedMemoryLOG* data){
 //================================================================
 //==========================SENSORS===============================
 //================================================================
+
+int DOOR_TRIGGER = 0;
+int PRESENCE_TRIGGER = 0;
+int GAS_TRIGGER = 0;
+
 //TODO SI SE QUEDA SIN MEMORIA REINICIAR
 void print_memory_usage() {
     // Obtener el uso de la memoria RAM libre
@@ -145,17 +187,27 @@ void DoorSensorTask(void *pvParameters){
 
     while(1) {
         int level = gpio_get_level(DOOR_SERNSOR_PIN);
-        
+
+        //Trigger the alarm        
         xSemaphoreTake(mutexSensorLog, portMAX_DELAY);
         getDateTimeString(sharedLog->dateTimeString);
         strcpy(sharedLog->sensor, DOOR_SENSOR);
         sharedLog->sensorID = DOOR_ID;
         sharedLog->value = level;
+        sharedLog->enabled = settings->doorSet;
         //printf("Valor %d\n", level);
+        DOOR_TRIGGER = level; //TRIGGER THE ALARM
         xQueueSend(logQ, sharedLog, portMAX_DELAY);
+        /*
+        if(xQueueSend(logQ, sharedLog, 0) != pdPASS){
+            xQueueReceive(logQ, NULL, 0); //
+            xQueueSend(logQ, sharedLog, 0);
+        }
+        */
         xSemaphoreGive(mutexSensorLog);
 
-        vTaskDelay(pdMS_TO_TICKS(100)); // Esperar 1 segundo entre lecturas
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
     }
 }
 
@@ -164,13 +216,22 @@ void PresenceSensorTask(void *pvParameters){
     while(1){
         int motionDetected = gpio_get_level(PRESENCE_SENSOR_PIN);
         xSemaphoreTake(mutexSensorLog, portMAX_DELAY);
+
         getDateTimeString(sharedLog->dateTimeString);
         strcpy(sharedLog->sensor, PRESENCE_SENSOR);
         sharedLog->sensorID = PRESENCE_ID;
         sharedLog->value = motionDetected;
+        sharedLog->enabled = settings->presenceSet;
+        PRESENCE_TRIGGER = motionDetected;
         xQueueSend(logQ, sharedLog, portMAX_DELAY);
+        /*
+        if(xQueueSend(logQ, sharedLog, 0) != pdPASS){
+            xQueueReceive(logQ, NULL, 0); //
+            xQueueSend(logQ, sharedLog, 0);
+        }
+        */   
         xSemaphoreGive(mutexSensorLog);
-        vTaskDelay(pdMS_TO_TICKS(100)); // Esperar 1 segundo entre lecturas
+        vTaskDelay(pdMS_TO_TICKS(100)); 
     }
 }
 
@@ -184,11 +245,18 @@ void GasSensorTask(void *pvParameters){
         strcpy(sharedLog->sensor, GAS_SENSOR);
         sharedLog->sensorID = GAS_ID;
         sharedLog->value = (float) adc_value;
+        sharedLog->enabled = settings->gasSet;
         //printf("Concentración de gas: %ld ppm\n", adc_value);
+        GAS_TRIGGER = adc_value;
         xQueueSend(logQ, sharedLog, portMAX_DELAY);
+        /*
+        if(xQueueSend(logQ, sharedLog, 0) != pdPASS){
+            xQueueReceive(logQ, NULL, 0); //
+            xQueueSend(logQ, sharedLog, 0);
+        }
+        */
         xSemaphoreGive(mutexSensorLog);
-
-        vTaskDelay(pdMS_TO_TICKS(200)); // Esperar 1 segundo entre lecturas
+        vTaskDelay(pdMS_TO_TICKS(100)); 
     }
 }
 
@@ -196,33 +264,106 @@ void GasSensorTask(void *pvParameters){
 //=============================MQTT===============================
 //================================================================
 
+void publishSettings(esp_mqtt_client_handle_t client, SharedSettings *settings, cJSON *json, char *json_str){
+    jsonSrtSettings(json, &json_str, settings);
+    esp_mqtt_client_publish(client, DEVICE_SENSORS, json_str,  0,  0,  0);
+    vTaskDelay(pdMS_TO_TICKS(300));
+}
+
 void publishValues(esp_mqtt_client_handle_t client, SharedMemoryLOG *copySharedLog, cJSON *json, char *json_str){
     
     if(xQueueReceive(logQ, copySharedLog, portMAX_DELAY) == pdTRUE){    
 
-        jsonStrLog(json, &json_str, copySharedLog);
-        switch (copySharedLog->sensorID){
-        case DOOR_ID:
-            esp_mqtt_client_publish(client, DOOR_TOPIC_VALUE, json_str,  0,  0,  0);
-            break;
-        
-        case GAS_ID:
-            esp_mqtt_client_publish(client, GAS_TOPIC_VALUE, json_str,  0,  0,  0);
-            break;
+        if(settings->alarmSet){
+            jsonStrLog(json, &json_str, copySharedLog);
+            
+            switch (copySharedLog->sensorID){
+                case DOOR_ID:
+                    if(settings->doorSet == 1 && !DOOR_TRIGGER){
+                        esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  0,  0);
+                    }
+                    //esp_mqtt_client_publish(client, DOOR_TOPIC_VALUE, json_str,  0,  0,  0);
+                    break;
 
-        case PRESENCE_ID:
-            esp_mqtt_client_publish(client, PRESENCE_TOPIC_VALUE, json_str,  0,  0,  0);
-            break;
+                case GAS_ID:
+                    if(settings->gasSet == 1 && GAS_TRIGGER > 2000){
+                        esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  0,  0);
+                    }
+                    //esp_mqtt_client_publish(client, GAS_TOPIC_VALUE, json_str,  0,  0,  0);
+                    break;
 
-        default:
-            ESP_LOGE(TAG_MQTT, "Error ID Sensors");
-            printf("ID %d\n", copySharedLog->sensorID);
-            break;
+                case PRESENCE_ID:
+                    if(settings->presenceSet == 1 && PRESENCE_TRIGGER){
+                        esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  0,  0);
+                    }
+                    //esp_mqtt_client_publish(client, PRESENCE_TOPIC_VALUE, json_str,  0,  0,  0);
+                    break;
+
+                default:
+                    ESP_LOGE(TAG_MQTT, "Error ID Sensors");
+                    printf("ID %d\n", copySharedLog->sensorID);
+                    break;
+            }
+
+            free(json_str);
+            json_str = NULL;
         }
-        free(json_str);
-        json_str = NULL;
-         vTaskDelay(pdMS_TO_TICKS(400));
+        //MAL CONCEPTO Vamos eliminando datos para ir actualizando constantemente la cola
+        //xQueueReceive(logQ, copySharedLog, portMAX_DELAY); 
+        vTaskDelay(pdMS_TO_TICKS(300));
     }
+}
+
+void topicHandler(char *topic, int topic_len, char *data, int data_len){
+    
+    cJSON *dataJSON = NULL;
+    dataJSON = cJSON_Parse(data);
+
+    //Debug
+    printf("Tema: %.*s\n", topic_len, topic);
+    printf("%.*s\n", data_len, data);
+
+    char topic_buffer[topic_len + 1];
+    memcpy(topic_buffer, topic, topic_len);
+    topic_buffer[topic_len] = '\0';
+
+    cJSON *json = cJSON_GetObjectItem(dataJSON, "value");
+    int value = json->valueint;
+
+    /*value MUST BE 1 or 0*/
+    if(value == 1 || value == 0){
+        xSemaphoreTake(mutexSettings, portMAX_DELAY);
+        if(strcmp(topic_buffer, CFG_ALARM) == 0){
+            settings->alarmSet = value;
+            INFO_REQ = 1;
+        }else if(strcmp(topic_buffer, CFG_ALL) == 0){
+            settings->doorSet = value;
+            settings->gasSet = value;
+            settings->presenceSet = value;
+            INFO_REQ = 1;
+        }else if(strcmp(topic_buffer, CFG_DOOR) == 0){
+            settings->doorSet = value;
+            INFO_REQ = 1;
+        }else if(strcmp(topic_buffer, CFG_GAS) == 0){
+            settings->gasSet = value;
+            INFO_REQ = 1;
+        }else if(strcmp(topic_buffer, CFG_PRESENCE) == 0){
+            settings->presenceSet = value;
+            INFO_REQ = 1;
+        }else if(strcmp(topic_buffer, REQ_INFO) == 0){
+            INFO_REQ = value;
+        }else if(strcmp(topic_buffer, REBOOT) == 0){
+            REBOOT_FLAG = value;
+        }else{
+            printf("ERROR: Unidentified topic.\n");
+            printf(topic);
+        }
+        xSemaphoreGive(mutexSettings);
+    }else{
+        printf("ERROR. INVALID VALUE OF SETTINGS\n");
+    }
+    free(dataJSON);
+    free(json);
 }
 
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data) {
@@ -251,8 +392,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             break;
         case MQTT_EVENT_DATA:
             printf("MQTT mensaje recibido:\n");
-            printf("Tema: %.*s\n", event->topic_len, event->topic);
-            printf("Datos: %.*s\n", event->data_len, event->data);
+            topicHandler(event->topic, event->topic_len, event->data, event->data_len);
             break;
         case MQTT_EVENT_ERROR:
             printf("ERROR EVENT %d\n",event->error_handle->error_type);
@@ -296,17 +436,44 @@ void mqttTask(void *pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(200)); // Esperar 200 milisegundos
     }
     
-    cJSON* json = NULL;
-    char* json_str = NULL;
+    cJSON* jsonLOG = NULL;
+    char* jsonStrLOG = NULL;
+
+    cJSON *jsonSettings = NULL;
+    char *jsonStrSettings = NULL;
+
     //Inicializamos json
-    jsonSrtInit(&json);
+    jsonSrtInit(&jsonLOG, &jsonSettings);
 
-    esp_mqtt_client_subscribe(client, "/server",  0);
-    esp_mqtt_client_publish(client, "/sensors/log", "DEBUG", 5, 0, 0);
+    /*SUBSCRIPTIONS*/
+    esp_mqtt_client_subscribe(client, REQ_INFO,  0);
+
+    esp_mqtt_client_subscribe(client, CFG_ALARM,  0);
+    esp_mqtt_client_subscribe(client, CFG_DOOR,  0);
+    esp_mqtt_client_subscribe(client, CFG_GAS,  0);
+    esp_mqtt_client_subscribe(client, CFG_PRESENCE,  0);
+    esp_mqtt_client_subscribe(client, CFG_ALL,  0);
+    esp_mqtt_client_subscribe(client, REBOOT,  0);
+
+    esp_mqtt_client_publish(client, DEVICE_INFO, "POWERED ON", 10, 0, 0);
     SharedMemoryLOG *copySharedLog = (SharedMemoryLOG *)malloc(sizeof(SharedMemoryLOG));
-
+    
     while (1){
-        publishValues(client, copySharedLog, json, json_str);
+
+        publishValues(client, copySharedLog, jsonLOG, jsonStrLOG);
+        
+        if(INFO_REQ){
+            publishSettings(client, settings, jsonSettings, jsonStrSettings);
+            INFO_REQ = 0;
+        }
+
+        if(REBOOT_FLAG){
+            printf("REBOOTING...\n");
+            esp_mqtt_client_publish(client, DEVICE_INFO, "REBOOTING", 9, 0, 0);
+            REBOOT_FLAG = 0;
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            esp_restart();
+        }
     }
 }
 
@@ -343,8 +510,18 @@ void app_main(){
 
 
     sharedLog = (SharedMemoryLOG *)malloc(sizeof(SharedMemoryLOG));
+    settings = (SharedSettings *)malloc(sizeof(SharedSettings));
+
+    settings->alarmSet = 0;
+    settings->doorSet = 0;
+    settings->gasSet = 0;
+    settings->presenceSet = 0;
+
     mutexSensorLog = xSemaphoreCreateMutex();
+    mutexSettings = xSemaphoreCreateMutex();
+
     logQ = xQueueCreate(3, sizeof(SharedMemoryLOG));
+
 
     //================================================================
     //=======================WIFI INITIALITATION======================
