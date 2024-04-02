@@ -185,27 +185,40 @@ void print_memory_usage() {
 
 void DoorSensorTask(void *pvParameters){
 
+    int previousLevel;
+    int currentLevel;
+    TickType_t lastChangeTime = xTaskGetTickCount();
+
     while(1) {
-        int level = gpio_get_level(DOOR_SERNSOR_PIN);
 
-        //Trigger the alarm        
-        xSemaphoreTake(mutexSensorLog, portMAX_DELAY);
-        getDateTimeString(sharedLog->dateTimeString);
-        strcpy(sharedLog->sensor, DOOR_SENSOR);
-        sharedLog->sensorID = DOOR_ID;
-        sharedLog->value = level;
-        sharedLog->enabled = settings->doorSet;
-        //printf("Valor %d\n", level);
-        DOOR_TRIGGER = level; //TRIGGER THE ALARM
-        xQueueSend(logQ, sharedLog, portMAX_DELAY);
-        /*
-        if(xQueueSend(logQ, sharedLog, 0) != pdPASS){
-            xQueueReceive(logQ, NULL, 0); //
-            xQueueSend(logQ, sharedLog, 0);
+        previousLevel = gpio_get_level(DOOR_SERNSOR_PIN);
+    
+        vTaskDelay(pdMS_TO_TICKS(50)); //Debounce
+        currentLevel = gpio_get_level(DOOR_SERNSOR_PIN);
+
+        //El tiempo de espera es simplemente para asegurar que se activa la alarma aunque no cambie el valor del sensor.
+        if(previousLevel != currentLevel || (xTaskGetTickCount() - lastChangeTime) >= pdMS_TO_TICKS(1500)){
+           
+            previousLevel = currentLevel;
+            lastChangeTime = xTaskGetTickCount();
+            //Trigger the alarm        
+            xSemaphoreTake(mutexSensorLog, portMAX_DELAY);
+            getDateTimeString(sharedLog->dateTimeString);
+            strcpy(sharedLog->sensor, DOOR_SENSOR);
+            sharedLog->sensorID = DOOR_ID;
+            sharedLog->value = currentLevel;
+            sharedLog->enabled = settings->doorSet;
+            //printf("Valor %d\n", level);
+            DOOR_TRIGGER = currentLevel; //TRIGGER THE ALARM
+            xQueueSend(logQ, sharedLog, portMAX_DELAY);
+            /*
+            if(xQueueSend(logQ, sharedLog, 0) != pdPASS){
+                xQueueReceive(logQ, NULL, 0); //
+                xQueueSend(logQ, sharedLog, 0);
+            }
+            */
+            xSemaphoreGive(mutexSensorLog);
         }
-        */
-        xSemaphoreGive(mutexSensorLog);
-
         vTaskDelay(pdMS_TO_TICKS(100));
         
     }

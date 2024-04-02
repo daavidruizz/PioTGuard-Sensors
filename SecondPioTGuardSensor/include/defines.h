@@ -1,9 +1,9 @@
 //=====================WIFI DEFINES============================
-#define WIFI_SSID   "VIRGIN-telco_EBDF"
-#define WIFI_PASS   "T7RU44YTLT"
+#define WIFI_SSID   "**"
+#define WIFI_PASS   "**"
 
 //=====================MQTT DEFINES============================
-#define MQTT_BROKER     "mqtts://rzzz.ddns.net" //"mqtts://192.168.1.211" 
+#define MQTT_BROKER     "**"  //"mqtts://rzzz.ddns.net"
 #define MQTT_PORT       8883
 #define MQTT_USERNAME   "sensor"
 #define MQTT_PASSWORD   "140516"
