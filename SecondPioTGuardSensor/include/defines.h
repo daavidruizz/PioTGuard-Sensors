@@ -1,13 +1,13 @@
 //=====================WIFI DEFINES============================
-#define WIFI_SSID   "**"
-#define WIFI_PASS   "**"
+#define WIFI_SSID   "iPhone de David"
+#define WIFI_PASS   "cocinalimpia"
 
 //=====================MQTT DEFINES============================
-#define MQTT_BROKER     "**"  //"mqtts://rzzz.ddns.net"
+#define MQTT_BROKER     "mqtts://rzzz.ddns.net"  //"mqtts://rzzz.ddns.net"
 #define MQTT_PORT       8883
 #define MQTT_USERNAME   "sensor"
 #define MQTT_PASSWORD   "140516"
-#define SERVER_CN       "server.example.com"
+#define SERVER_CN       "rzzz.ddns.net"
     //TOPICS
 #define GAS_TOPIC_VALUE         "/info/sensor/gas"
 #define DOOR_TOPIC_VALUE        "/info/sensor/door"
