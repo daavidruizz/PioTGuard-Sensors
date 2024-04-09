@@ -49,13 +49,18 @@ SemaphoreHandle_t mutexSettings;
 //================================================================
 //=======================CERTIFICATES=============================
 //================================================================
-extern const uint8_t MQTTca_crt_start[] asm("_binary_MQTTca_crt_start");
-extern const uint8_t MQTTca_crt_end[]   asm("_binary_MQTTca_crt_end");
-extern const uint8_t sensorclient_crt_start[] asm("_binary_sensorclient_crt_start");
-extern const uint8_t sensorclient_crt_end[]   asm("_binary_sensorclient_crt_end");
-extern const uint8_t sensorclient_key_start[] asm("_binary_sensorclient_key_start");
-extern const uint8_t sensorclient_key_end[]   asm("_binary_sensorclient_key_end");
-
+extern const uint8_t MQTTca_crt_start[] asm("_binary_ca_crt_start");
+extern const uint8_t MQTTca_crt_end[]   asm("_binary_ca_crt_end");
+extern const uint8_t sensorclient_crt_start[] asm("_binary_sensor_crt_start");
+extern const uint8_t sensorclient_crt_end[]   asm("_binary_sensor_crt_end");
+extern const uint8_t sensorclient_key_start[] asm("_binary_sensor_key_start");
+extern const uint8_t sensorclient_key_end[]   asm("_binary_sensor_key_end");
+//extern const uint8_t binary_MQTTca_crt_start[];
+//extern const uint8_t binary_MQTTca_crt_end[]; 
+//extern const uint8_t binary_sensorclient_crt_start[];
+//extern const uint8_t binary_sensorclient_crt_end[];
+//extern const uint8_t binary_sensorclient_key_start[];
+//extern const uint8_t binary_sensorclient_key_end[];
 
 //================================================================
 //======================SHARED MEMORY=============================
@@ -66,13 +71,8 @@ typedef struct {
     int8_t sensorID;
     float value;
     int8_t enabled;
-} SharedMemoryLOG;
+} SharedMemory;
 
-SharedMemoryLOG *sharedLog = NULL;
-
-SemaphoreHandle_t mutexSensorLog;
-
-QueueHandle_t logQ;
 QueueHandle_t dataQ;
 
 //================================================================
@@ -150,7 +150,7 @@ void jsonSrtSettings(cJSON* json,char** json_str, const SharedSettings* settings
     xSemaphoreGive(mutexSettings);
 }
 
-void jsonStrLog(cJSON* json,char** json_str, const SharedMemoryLOG* data){
+void jsonStrLog(cJSON* json,char** json_str, const SharedMemory* data){
     //Eliminamos
     cJSON_DeleteItemFromObject(json, "enabled");
     cJSON_DeleteItemFromObject(json, "sensor");
@@ -185,6 +185,8 @@ void print_memory_usage() {
 
 void DoorSensorTask(void *pvParameters){
 
+    SharedMemory dataDoor;
+
     int previousLevel;
     int currentLevel;
     TickType_t lastChangeTime = xTaskGetTickCount();
@@ -192,83 +194,65 @@ void DoorSensorTask(void *pvParameters){
     while(1) {
 
         previousLevel = gpio_get_level(DOOR_SERNSOR_PIN);
-    
         vTaskDelay(pdMS_TO_TICKS(50)); //Debounce
         currentLevel = gpio_get_level(DOOR_SERNSOR_PIN);
 
         //El tiempo de espera es simplemente para asegurar que se activa la alarma aunque no cambie el valor del sensor.
         if(previousLevel != currentLevel || (xTaskGetTickCount() - lastChangeTime) >= pdMS_TO_TICKS(1500)){
-           
+            
             previousLevel = currentLevel;
             lastChangeTime = xTaskGetTickCount();
+            
             //Trigger the alarm        
-            xSemaphoreTake(mutexSensorLog, portMAX_DELAY);
-            getDateTimeString(sharedLog->dateTimeString);
-            strcpy(sharedLog->sensor, DOOR_SENSOR);
-            sharedLog->sensorID = DOOR_ID;
-            sharedLog->value = currentLevel;
-            sharedLog->enabled = settings->doorSet;
+            getDateTimeString(dataDoor.dateTimeString);
+            strcpy(dataDoor.sensor, DOOR_SENSOR);
+            dataDoor.sensorID = DOOR_ID;
+            dataDoor.value = currentLevel;
+            dataDoor.enabled = settings->doorSet;
             //printf("Valor %d\n", level);
             DOOR_TRIGGER = currentLevel; //TRIGGER THE ALARM
-            xQueueSend(logQ, sharedLog, portMAX_DELAY);
-            /*
-            if(xQueueSend(logQ, sharedLog, 0) != pdPASS){
-                xQueueReceive(logQ, NULL, 0); //
-                xQueueSend(logQ, sharedLog, 0);
-            }
-            */
-            xSemaphoreGive(mutexSensorLog);
+            xQueueSend(dataQ, &dataDoor, portMAX_DELAY);
         }
         vTaskDelay(pdMS_TO_TICKS(100));
-        
     }
 }
 
 void PresenceSensorTask(void *pvParameters){
     
+    SharedMemory dataPresence;
+
     while(1){
         int motionDetected = gpio_get_level(PRESENCE_SENSOR_PIN);
-        xSemaphoreTake(mutexSensorLog, portMAX_DELAY);
+        
 
-        getDateTimeString(sharedLog->dateTimeString);
-        strcpy(sharedLog->sensor, PRESENCE_SENSOR);
-        sharedLog->sensorID = PRESENCE_ID;
-        sharedLog->value = motionDetected;
-        sharedLog->enabled = settings->presenceSet;
+        getDateTimeString(dataPresence.dateTimeString);
+        strcpy(dataPresence.sensor, PRESENCE_SENSOR);
+        dataPresence.sensorID = PRESENCE_ID;
+        dataPresence.value = motionDetected;
+        dataPresence.enabled = settings->presenceSet;
         PRESENCE_TRIGGER = motionDetected;
-        xQueueSend(logQ, sharedLog, portMAX_DELAY);
-        /*
-        if(xQueueSend(logQ, sharedLog, 0) != pdPASS){
-            xQueueReceive(logQ, NULL, 0); //
-            xQueueSend(logQ, sharedLog, 0);
-        }
-        */   
-        xSemaphoreGive(mutexSensorLog);
+        xQueueSend(dataQ, &dataPresence, portMAX_DELAY);
+
         vTaskDelay(pdMS_TO_TICKS(100)); 
     }
 }
 
 void GasSensorTask(void *pvParameters){
+    //TODO: MANAGE SENSIBILITY GAS SENSOR
+    SharedMemory dataGas;
 
     while(1) {
         uint32_t adc_value = adc1_get_raw(GAS_SENSOR_PIN);
 
-        xSemaphoreTake(mutexSensorLog, portMAX_DELAY);
-        getDateTimeString(sharedLog->dateTimeString);
-        strcpy(sharedLog->sensor, GAS_SENSOR);
-        sharedLog->sensorID = GAS_ID;
-        sharedLog->value = (float) adc_value;
-        sharedLog->enabled = settings->gasSet;
+        getDateTimeString(dataGas.dateTimeString);
+        strcpy(dataGas.sensor, GAS_SENSOR);
+        dataGas.sensorID = GAS_ID;
+        dataGas.value = (float) adc_value;
+        dataGas.enabled = settings->gasSet;
         //printf("Concentración de gas: %ld ppm\n", adc_value);
         GAS_TRIGGER = adc_value;
-        xQueueSend(logQ, sharedLog, portMAX_DELAY);
-        /*
-        if(xQueueSend(logQ, sharedLog, 0) != pdPASS){
-            xQueueReceive(logQ, NULL, 0); //
-            xQueueSend(logQ, sharedLog, 0);
-        }
-        */
-        xSemaphoreGive(mutexSensorLog);
+        xQueueSend(dataQ, &dataGas, portMAX_DELAY);
+
         vTaskDelay(pdMS_TO_TICKS(100)); 
     }
 }
@@ -280,49 +264,44 @@ void GasSensorTask(void *pvParameters){
 void publishSettings(esp_mqtt_client_handle_t client, SharedSettings *settings, cJSON *json, char *json_str){
     jsonSrtSettings(json, &json_str, settings);
     esp_mqtt_client_publish(client, DEVICE_SENSORS, json_str,  0,  0,  0);
-    vTaskDelay(pdMS_TO_TICKS(300));
 }
 
-void publishValues(esp_mqtt_client_handle_t client, SharedMemoryLOG *copySharedLog, cJSON *json, char *json_str){
+void publishValues(esp_mqtt_client_handle_t client, SharedMemory *data , cJSON *json, char *json_str){
+
     
-    if(xQueueReceive(logQ, copySharedLog, portMAX_DELAY) == pdTRUE){    
+    if(xQueueReceive(dataQ, data, portMAX_DELAY) == pdTRUE){    
 
         if(settings->alarmSet){
-            jsonStrLog(json, &json_str, copySharedLog);
+            jsonStrLog(json, &json_str, data);
             
-            switch (copySharedLog->sensorID){
+            switch (data->sensorID){
                 case DOOR_ID:
                     if(settings->doorSet == 1 && !DOOR_TRIGGER){
                         esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  0,  0);
                     }
-                    //esp_mqtt_client_publish(client, DOOR_TOPIC_VALUE, json_str,  0,  0,  0);
                     break;
 
                 case GAS_ID:
                     if(settings->gasSet == 1 && GAS_TRIGGER > 2000){
                         esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  0,  0);
                     }
-                    //esp_mqtt_client_publish(client, GAS_TOPIC_VALUE, json_str,  0,  0,  0);
                     break;
 
                 case PRESENCE_ID:
                     if(settings->presenceSet == 1 && PRESENCE_TRIGGER){
                         esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  0,  0);
                     }
-                    //esp_mqtt_client_publish(client, PRESENCE_TOPIC_VALUE, json_str,  0,  0,  0);
                     break;
 
                 default:
                     ESP_LOGE(TAG_MQTT, "Error ID Sensors");
-                    printf("ID %d\n", copySharedLog->sensorID);
+                    printf("ID %d\n", data->sensorID);
                     break;
             }
 
             free(json_str);
             json_str = NULL;
         }
-        //MAL CONCEPTO Vamos eliminando datos para ir actualizando constantemente la cola
-        //xQueueReceive(logQ, copySharedLog, portMAX_DELAY); 
         vTaskDelay(pdMS_TO_TICKS(300));
     }
 }
@@ -428,7 +407,6 @@ void mqttTask(void *pvParameters) {
         .credentials.authentication.certificate = (const char *) sensorclient_crt_start,
         .credentials.authentication.key = (const char *) sensorclient_key_start,
         
-
         .credentials.username = MQTT_USERNAME,
         .credentials.authentication.password = MQTT_PASSWORD, 
         .credentials.authentication.use_secure_element = false,
@@ -469,11 +447,12 @@ void mqttTask(void *pvParameters) {
     esp_mqtt_client_subscribe(client, REBOOT,  0);
 
     esp_mqtt_client_publish(client, DEVICE_INFO, "POWERED ON", 10, 0, 0);
-    SharedMemoryLOG *copySharedLog = (SharedMemoryLOG *)malloc(sizeof(SharedMemoryLOG));
     
+    SharedMemory dataToSend;
+
     while (1){
 
-        publishValues(client, copySharedLog, jsonLOG, jsonStrLOG);
+        publishValues(client, &dataToSend, jsonLOG, jsonStrLOG);
         
         if(INFO_REQ){
             publishSettings(client, settings, jsonSettings, jsonStrSettings);
@@ -521,8 +500,6 @@ void app_main(){
 
     //=================================================================
 
-
-    sharedLog = (SharedMemoryLOG *)malloc(sizeof(SharedMemoryLOG));
     settings = (SharedSettings *)malloc(sizeof(SharedSettings));
 
     settings->alarmSet = 0;
@@ -530,10 +507,9 @@ void app_main(){
     settings->gasSet = 0;
     settings->presenceSet = 0;
 
-    mutexSensorLog = xSemaphoreCreateMutex();
     mutexSettings = xSemaphoreCreateMutex();
 
-    logQ = xQueueCreate(3, sizeof(SharedMemoryLOG));
+    dataQ = xQueueCreate(9, sizeof(SharedMemory));
 
 
     //================================================================
@@ -595,10 +571,10 @@ void app_main(){
 
     
     //Sensors Tasks
-    xTaskCreatePinnedToCore(&DoorSensorTask, "DoorSensorTask",4096, NULL, 5, NULL, 1); 
-    xTaskCreatePinnedToCore(&GasSensorTask, "GasSensorTask",4096, NULL, 5, NULL, 1); 
-    xTaskCreatePinnedToCore(&PresenceSensorTask, "PresenceSensorTask",4096, NULL, 5, NULL, 1); 
+    xTaskCreatePinnedToCore(&DoorSensorTask, "DoorSensorTask",4096, NULL, 6, NULL, 1); 
+    xTaskCreatePinnedToCore(&GasSensorTask, "GasSensorTask",4096, NULL, 6, NULL, 1); 
+    xTaskCreatePinnedToCore(&PresenceSensorTask, "PresenceSensorTask",4096, NULL, 6, NULL, 1); 
 
     //MQTT Task en el Core0
-    xTaskCreatePinnedToCore(&mqttTask, "mqtt_task", 4096, NULL, 5, NULL, 0);
+    xTaskCreatePinnedToCore(&mqttTask, "mqtt_task", 4096, NULL, 7, NULL, 0);
 }
