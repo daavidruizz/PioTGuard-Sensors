@@ -199,7 +199,7 @@ void DoorSensorTask(void *pvParameters){
 
         //El tiempo de espera es simplemente para asegurar que se activa la alarma aunque no cambie el valor del sensor.
         if(previousLevel != currentLevel || (xTaskGetTickCount() - lastChangeTime) >= pdMS_TO_TICKS(1500)){
-           
+            
             previousLevel = currentLevel;
             lastChangeTime = xTaskGetTickCount();
             
