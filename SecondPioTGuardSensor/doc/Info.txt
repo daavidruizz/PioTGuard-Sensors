@@ -1,0 +1,12 @@
+Sobre las líneas para importar los certificados:
+
+extern const uint8_t MQTTca_crt_start[] asm("_binary_ca_crt_start");
+extern const uint8_t sensorclient_crt_start[] asm("_binary_sensor_crt_start");
+extern const uint8_t sensorclient_key_start[] asm("_binary_sensor_key_start");
+
+
+Es utilizado comúmente en aplicaciones basadas en ESP-IDF para incrustar archivos binarios 
+(como certificados y claves) directamente en el binario del firmware. La directiva asm("_binary_<filename>_start") 
+es utilizada por el compilador de ESP-IDF para acceder a los datos binarios que se han incrustado en el firmware a 
+través del proceso de construcción. Sin embargo, este método es específico de la cadena de herramientas de ESP-IDF 
+y no es parte del estándar C.

@@ -50,17 +50,12 @@ SemaphoreHandle_t mutexSettings;
 //=======================CERTIFICATES=============================
 //================================================================
 extern const uint8_t MQTTca_crt_start[] asm("_binary_ca_crt_start");
-extern const uint8_t MQTTca_crt_end[]   asm("_binary_ca_crt_end");
 extern const uint8_t sensorclient_crt_start[] asm("_binary_sensor_crt_start");
-extern const uint8_t sensorclient_crt_end[]   asm("_binary_sensor_crt_end");
 extern const uint8_t sensorclient_key_start[] asm("_binary_sensor_key_start");
-extern const uint8_t sensorclient_key_end[]   asm("_binary_sensor_key_end");
+
 //extern const uint8_t binary_MQTTca_crt_start[];
-//extern const uint8_t binary_MQTTca_crt_end[]; 
 //extern const uint8_t binary_sensorclient_crt_start[];
-//extern const uint8_t binary_sensorclient_crt_end[];
 //extern const uint8_t binary_sensorclient_key_start[];
-//extern const uint8_t binary_sensorclient_key_end[];
 
 //================================================================
 //======================SHARED MEMORY=============================
@@ -424,7 +419,7 @@ void mqttTask(void *pvParameters) {
         .broker.verification.certificate = (const char *) MQTTca_crt_start,
         .credentials.authentication.certificate = (const char *) sensorclient_crt_start,
         .credentials.authentication.key = (const char *) sensorclient_key_start,
-        
+        //.credentials.authentication.key_password TODO
         .credentials.username = MQTT_USERNAME,
         .credentials.authentication.password = MQTT_PASSWORD, 
         .credentials.authentication.use_secure_element = false,
