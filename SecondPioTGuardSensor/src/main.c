@@ -184,12 +184,14 @@ void print_memory_usage() {
 }
 
 void DoorSensorTask(void *pvParameters){
-
+    //TODO INVERTIR VALOS SENSOR DE 0 A 1
     SharedMemory dataDoor;
 
     int previousLevel;
     int currentLevel;
+    int sendLevel = -1;
     TickType_t lastChangeTime = xTaskGetTickCount();
+    TickType_t lastSendTime = xTaskGetTickCount();
 
     while(1) {
 
@@ -198,7 +200,10 @@ void DoorSensorTask(void *pvParameters){
         currentLevel = gpio_get_level(DOOR_SERNSOR_PIN);
 
         //El tiempo de espera es simplemente para asegurar que se activa la alarma aunque no cambie el valor del sensor.
-        if(previousLevel != currentLevel || (xTaskGetTickCount() - lastChangeTime) >= pdMS_TO_TICKS(1500)){
+        int hasTimeElapsed = ((xTaskGetTickCount() - lastChangeTime) >= pdMS_TO_TICKS(1500));
+        int hasTimeElapsedForSend = ((xTaskGetTickCount() - lastSendTime) >= pdMS_TO_TICKS(3000)); // 3 segundos
+
+        if((previousLevel != currentLevel) || hasTimeElapsed){
             
             previousLevel = currentLevel;
             lastChangeTime = xTaskGetTickCount();
@@ -209,9 +214,13 @@ void DoorSensorTask(void *pvParameters){
             dataDoor.sensorID = DOOR_ID;
             dataDoor.value = currentLevel;
             dataDoor.enabled = settings->doorSet;
-            //printf("Valor %d\n", level);
             DOOR_TRIGGER = currentLevel; //TRIGGER THE ALARM
-            xQueueSend(dataQ, &dataDoor, portMAX_DELAY);
+            
+            if((currentLevel != sendLevel  || hasTimeElapsedForSend) && !currentLevel){
+                lastSendTime = xTaskGetTickCount();
+                xQueueSend(dataQ, &dataDoor, portMAX_DELAY);
+            }
+            sendLevel = dataDoor.value;
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -220,10 +229,11 @@ void DoorSensorTask(void *pvParameters){
 void PresenceSensorTask(void *pvParameters){
     
     SharedMemory dataPresence;
+    TickType_t lastChangeTime = xTaskGetTickCount();
 
     while(1){
         int motionDetected = gpio_get_level(PRESENCE_SENSOR_PIN);
-        
+        int hasTimeElapsed = ((xTaskGetTickCount() - lastChangeTime) >= pdMS_TO_TICKS(1500));
 
         getDateTimeString(dataPresence.dateTimeString);
         strcpy(dataPresence.sensor, PRESENCE_SENSOR);
@@ -231,8 +241,11 @@ void PresenceSensorTask(void *pvParameters){
         dataPresence.value = motionDetected;
         dataPresence.enabled = settings->presenceSet;
         PRESENCE_TRIGGER = motionDetected;
-        xQueueSend(dataQ, &dataPresence, portMAX_DELAY);
 
+        if(motionDetected && hasTimeElapsed){
+            lastChangeTime = xTaskGetTickCount();
+            xQueueSend(dataQ, &dataPresence, portMAX_DELAY);
+        }
         vTaskDelay(pdMS_TO_TICKS(100)); 
     }
 }
@@ -240,9 +253,11 @@ void PresenceSensorTask(void *pvParameters){
 void GasSensorTask(void *pvParameters){
     //TODO: MANAGE SENSIBILITY GAS SENSOR
     SharedMemory dataGas;
+    TickType_t lastChangeTime = xTaskGetTickCount();
 
     while(1) {
         uint32_t adc_value = adc1_get_raw(GAS_SENSOR_PIN);
+        int hasTimeElapsed = ((xTaskGetTickCount() - lastChangeTime) >= pdMS_TO_TICKS(1500));
 
         getDateTimeString(dataGas.dateTimeString);
         strcpy(dataGas.sensor, GAS_SENSOR);
@@ -251,7 +266,11 @@ void GasSensorTask(void *pvParameters){
         dataGas.enabled = settings->gasSet;
         //printf("Concentración de gas: %ld ppm\n", adc_value);
         GAS_TRIGGER = adc_value;
-        xQueueSend(dataQ, &dataGas, portMAX_DELAY);
+        //TODO SENSIBILITY GAS SENSOR
+        if(hasTimeElapsed){
+            lastChangeTime = xTaskGetTickCount();
+            xQueueSend(dataQ, &dataGas, portMAX_DELAY);
+        }
 
         vTaskDelay(pdMS_TO_TICKS(100)); 
     }
@@ -302,7 +321,6 @@ void publishValues(esp_mqtt_client_handle_t client, SharedMemory *data , cJSON *
             free(json_str);
             json_str = NULL;
         }
-        vTaskDelay(pdMS_TO_TICKS(300));
     }
 }
 
@@ -466,6 +484,7 @@ void mqttTask(void *pvParameters) {
             vTaskDelay(pdMS_TO_TICKS(3000));
             esp_restart();
         }
+        vTaskDelay(pdMS_TO_TICKS(300));
     }
 }
 
