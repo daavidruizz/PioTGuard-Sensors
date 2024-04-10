@@ -17,7 +17,7 @@
 #include <cJSON.h>
 #include "esp_system.h" // Para esp_chip_info
 #include "mbedtls/debug.h"
-//prueba V3
+//prueba QueueSet
 
 static const char *TAG_MQTT = "MQTT";
 static const char *TAG_WIFI = "Wifi";
