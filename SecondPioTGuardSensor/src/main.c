@@ -17,10 +17,7 @@
 #include <cJSON.h>
 #include "esp_system.h" // Para esp_chip_info
 #include "mbedtls/debug.h"
-<<<<<<< HEAD
 //prueba de que todo bien main
-=======
->>>>>>> e8e7bc022efb0d5247f4dcba2c9a9beac0fa55d3
 
 static const char *TAG_MQTT = "MQTT";
 static const char *TAG_WIFI = "Wifi";
@@ -385,7 +382,6 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             break;
         case MQTT_EVENT_DISCONNECTED:
             printf("MQTT desconectado del broker\n");
-            //mqtt_connected = 0;
             vTaskDelay(100);
             esp_restart();
             break;
