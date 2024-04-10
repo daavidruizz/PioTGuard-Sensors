@@ -1,5 +1,5 @@
 //=====================WIFI DEFINES============================
-#define WIFI_SSID   "rzzzJOQ24G"
+#define WIFI_SSID   "iPhone de David"
 #define WIFI_PASS   "cocinalimpia"
 
 //=====================MQTT DEFINES============================

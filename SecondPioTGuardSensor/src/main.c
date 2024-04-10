@@ -58,7 +58,7 @@ extern const uint8_t sensorclient_key_start[] asm("_binary_sensor_key_start");
 //extern const uint8_t binary_sensorclient_key_start[];
 
 //================================================================
-//======================SHARED MEMORY=============================
+//===========================MEMORY===============================
 //================================================================
 typedef struct {
     char dateTimeString[64];
@@ -68,7 +68,8 @@ typedef struct {
     int8_t enabled;
 } SharedMemory;
 
-QueueHandle_t dataQ;
+QueueHandle_t doorQ, gasQ, presenceQ;
+QueueSetHandle_t setQ;
 
 //================================================================
 //===================DATE TIME / JSON=============================
@@ -213,7 +214,7 @@ void DoorSensorTask(void *pvParameters){
             
             if((currentLevel != sendLevel  || hasTimeElapsedForSend) && !currentLevel){
                 lastSendTime = xTaskGetTickCount();
-                xQueueSend(dataQ, &dataDoor, portMAX_DELAY);
+                xQueueSend(doorQ, &dataDoor, portMAX_DELAY);
             }
             sendLevel = dataDoor.value;
         }
@@ -239,7 +240,7 @@ void PresenceSensorTask(void *pvParameters){
 
         if(motionDetected && hasTimeElapsed){
             lastChangeTime = xTaskGetTickCount();
-            xQueueSend(dataQ, &dataPresence, portMAX_DELAY);
+            xQueueSend(presenceQ, &dataPresence, portMAX_DELAY);
         }
         vTaskDelay(pdMS_TO_TICKS(100)); 
     }
@@ -264,7 +265,7 @@ void GasSensorTask(void *pvParameters){
         //TODO SENSIBILITY GAS SENSOR
         if(hasTimeElapsed){
             lastChangeTime = xTaskGetTickCount();
-            xQueueSend(dataQ, &dataGas, portMAX_DELAY);
+            xQueueSend(gasQ, &dataGas, portMAX_DELAY);
         }
 
         vTaskDelay(pdMS_TO_TICKS(100)); 
@@ -282,8 +283,9 @@ void publishSettings(esp_mqtt_client_handle_t client, SharedSettings *settings, 
 
 void publishValues(esp_mqtt_client_handle_t client, SharedMemory *data , cJSON *json, char *json_str){
 
+    QueueHandle_t dataQ = xQueueSelectFromSet(setQ,portMAX_DELAY);
     
-    if(xQueueReceive(dataQ, data, portMAX_DELAY) == pdTRUE){    
+    if(dataQ != NULL && xQueueReceive(dataQ, data, portMAX_DELAY) == pdTRUE){    
 
         if(settings->alarmSet){
             jsonStrLog(json, &json_str, data);
@@ -523,8 +525,15 @@ void app_main(){
 
     mutexSettings = xSemaphoreCreateMutex();
 
-    dataQ = xQueueCreate(9, sizeof(SharedMemory));
+    gasQ = xQueueCreate(1, sizeof(SharedMemory));
+    doorQ = xQueueCreate(1, sizeof(SharedMemory));
+    presenceQ = xQueueCreate(1, sizeof(SharedMemory));
 
+    setQ = xQueueCreateSet(3 * sizeof(SharedMemory));
+
+    xQueueAddToSet(gasQ, setQ);
+    xQueueAddToSet(doorQ, setQ);
+    xQueueAddToSet(presenceQ, setQ);
 
     //================================================================
     //=======================WIFI INITIALITATION======================
