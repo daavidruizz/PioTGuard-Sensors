@@ -506,6 +506,11 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 
 void app_main(){
 
+    #ifdef WRITE_MODE
+    
+
+    #elif READ_MODE
+
     // Si quiero ver la ram, colocar esto en un while 1 print_memory_usage();
     //================================================================
     //==========================DEBUG CONFIG==========================
@@ -590,4 +595,5 @@ void app_main(){
 
     //MQTT Task en el Core0
     xTaskCreatePinnedToCore(&mqttTask, "mqtt_task", 4096, NULL, 7, NULL, 0);
+    #endif
 }
