@@ -17,7 +17,10 @@
 #include <cJSON.h>
 #include "esp_system.h" // Para esp_chip_info
 #include "mbedtls/debug.h"
+#include "nvs_write.h"
 //prueba de que todo bien main
+
+#define MAX_LENGTH 64
 
 static const char *TAG_MQTT = "MQTT";
 static const char *TAG_WIFI = "Wifi";
@@ -45,6 +48,17 @@ typedef struct {
 
 SharedSettings *settings = NULL;
 SemaphoreHandle_t mutexSettings;
+
+//NVS VALUES
+size_t required_size = MAX_LENGTH;
+char ssid[MAX_LENGTH];
+char ssid_pass[MAX_LENGTH];
+
+char cn[MAX_LENGTH];
+char key_pas[MAX_LENGTH];
+
+char mqttUser[MAX_LENGTH];
+char mqttPass[MAX_LENGTH];
 
 //================================================================
 //=======================CERTIFICATES=============================
@@ -507,7 +521,15 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 void app_main(){
 
     #ifdef WRITE_MODE
-    
+    esp_err_t ok;
+
+    ok = nvs_write_init();
+    ok = nvs_write_str();
+    if(ok == ESP_OK){
+        printf("NVS WRITED\n");
+    }else{
+        printf("ERROR WRITING NVS\n");
+    }
 
     #elif READ_MODE
 
@@ -529,11 +551,10 @@ void app_main(){
 
     dataQ = xQueueCreate(9, sizeof(SharedMemory));
 
-
     //================================================================
-    //=======================WIFI INITIALITATION======================
+    //================================NVS=============================
     //================================================================
-    //almacenamiento no volátil (NVS)
+    
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
@@ -541,6 +562,16 @@ void app_main(){
     }
     ESP_ERROR_CHECK(ret);
 
+    nvs_handle_t flash;
+
+    ESP_ERROR_CHECK(nvs_get_str(flash, SSID, NULL, &required_size));
+    
+    ESP_ERROR_CHECK(nvs_get_str(flash, "wifi_ssid", NULL, &required_size));
+    
+
+    //================================================================
+    //=======================WIFI INITIALITATION======================
+    //================================================================
     //stack de TCP/IP
     ESP_ERROR_CHECK(esp_netif_init());
 

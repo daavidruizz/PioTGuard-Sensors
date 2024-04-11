@@ -11,7 +11,7 @@ esp_err_t nvs_write_init(void){
     return ESP_OK;
 }
 
-esp_err_t nvs_write_str(const char* key, const char* value){
+esp_err_t nvs_write_str(void){
     //Abrimos NVS
     nvs_handle_t nvs_handle;
     esp_err_t err = nvs_open("storage", NVS_READWRITE, &nvs_handle);
