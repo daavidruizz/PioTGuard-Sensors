@@ -14,5 +14,5 @@
 esp_err_t nvs_write_init(void);
 
 //Write NVS
-esp_err_t nvs_write(const char* key, const char* value);
+esp_err_t nvs_write(void);
 #endif

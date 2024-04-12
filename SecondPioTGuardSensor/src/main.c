@@ -7,6 +7,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_tls.h"
+#include "nvs.h"
 #include "nvs_flash.h"
 #include "mqtt_client.h"
 #include "defines.h"
@@ -20,7 +21,7 @@
 #include "nvs_write.h"
 //prueba de que todo bien main
 
-#define MAX_LENGTH 64
+#define MAX_LENGTH 32
 
 static const char *TAG_MQTT = "MQTT";
 static const char *TAG_WIFI = "Wifi";
@@ -55,7 +56,7 @@ char ssid[MAX_LENGTH];
 char ssid_pass[MAX_LENGTH];
 
 char cn[MAX_LENGTH];
-char key_pas[MAX_LENGTH];
+char key_pass[MAX_LENGTH];
 
 char mqttUser[MAX_LENGTH];
 char mqttPass[MAX_LENGTH];
@@ -428,13 +429,13 @@ void mqttTask(void *pvParameters) {
         .broker.address.uri = MQTT_BROKER,
         .broker.address.port = MQTT_PORT,
         
-        .broker.verification.common_name = SERVER_CN,
+        .broker.verification.common_name = cn,
         .broker.verification.certificate = (const char *) MQTTca_crt_start,
         .credentials.authentication.certificate = (const char *) sensorclient_crt_start,
         .credentials.authentication.key = (const char *) sensorclient_key_start,
-        //.credentials.authentication.key_password TODO
-        .credentials.username = MQTT_USERNAME,
-        .credentials.authentication.password = MQTT_PASSWORD, 
+        .credentials.authentication.key_password = key_pass,
+        .credentials.username = mqttUser,
+        .credentials.authentication.password = mqttPass, 
         .credentials.authentication.use_secure_element = false,
         
     };
@@ -524,7 +525,7 @@ void app_main(){
     esp_err_t ok;
 
     ok = nvs_write_init();
-    ok = nvs_write_str();
+    ok = nvs_write();
     if(ok == ESP_OK){
         printf("NVS WRITED\n");
     }else{
@@ -563,11 +564,36 @@ void app_main(){
     ESP_ERROR_CHECK(ret);
 
     nvs_handle_t flash;
+    ret = nvs_open("storage", NVS_READONLY, &flash);
+    if (ret != ESP_OK) {
+        printf("Error (%s) initializing NVS!\n", esp_err_to_name(ret));
+        return;
+    } 
 
-    ESP_ERROR_CHECK(nvs_get_str(flash, SSID, NULL, &required_size));
-    
-    ESP_ERROR_CHECK(nvs_get_str(flash, "wifi_ssid", NULL, &required_size));
-    
+
+    required_size = MAX_LENGTH;
+    ESP_ERROR_CHECK(nvs_get_str(flash, SSID, ssid, &required_size));
+    //printf(SSID": %s; Length: %d\n", ssid, required_size);
+
+    required_size = MAX_LENGTH;
+    ESP_ERROR_CHECK(nvs_get_str(flash, SSID_PASS, ssid_pass, &required_size));
+    //printf(SSID_PASS": %s; Length: %d\n", ssid_pass, required_size);
+
+    required_size = MAX_LENGTH;
+    ESP_ERROR_CHECK(nvs_get_str(flash, CN, cn, &required_size));
+    //printf(CN": %s; Length: %d\n", cn, required_size);
+
+    required_size = MAX_LENGTH;
+    ESP_ERROR_CHECK(nvs_get_str(flash, KEY_PASS, key_pass, &required_size));
+    //printf(KEY_PASS": %s; Length: %d\n", key_pass, required_size);
+
+    required_size = MAX_LENGTH;
+    ESP_ERROR_CHECK(nvs_get_str(flash, MQTT_USER, mqttUser, &required_size));
+    //printf(MQTT_USER": %s; Length: %d\n", mqttUser, required_size);
+
+    required_size = MAX_LENGTH;
+    ESP_ERROR_CHECK(nvs_get_str(flash, MQTT_PASS, mqttPass, &required_size));
+    //printf(MQTT_PASS": %s; Length: %d\n", mqttPass, required_size);
 
     //================================================================
     //=======================WIFI INITIALITATION======================
@@ -585,12 +611,18 @@ void app_main(){
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
 
     // Configuración y conexión a la red WiFi
+    wifi_config_t wifi_config = {0};
+    strcpy((char *)wifi_config.sta.ssid, ssid);
+    strcpy((char *)wifi_config.sta.password, ssid_pass);
+    /*
+    // Configuración y conexión a la red WiFi
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = WIFI_SSID,
-            .password = WIFI_PASS,
+            .ssid = (unsigned char)ssid,
+            .password = (unsigned char)ssid_pass,
         },
     };
+    */
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
