@@ -10,6 +10,13 @@
 #define MQTT_USER   "MQTT_USER"
 #define MQTT_PASS   "MQTT_PASS"
 
+//MACROS CFG
+#define NVS_ALARM       "alarm"
+#define NVS_DOOR        "door"
+#define NVS_GAS         "gas"
+#define NVS_PRESENCE    "presence"
+
+
 //Init NVS write mode
 esp_err_t nvs_write_init(void);
 

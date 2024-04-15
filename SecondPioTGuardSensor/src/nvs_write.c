@@ -1,6 +1,7 @@
 #include "nvs_write.h"
 #include "nvs_flash.h"
 #include "credentials.h"
+#include "defines.h"
 
 esp_err_t nvs_write_init(void){
     esp_err_t err = nvs_flash_init();
@@ -54,6 +55,12 @@ esp_err_t nvs_write(void){
         nvs_close(nvs_handle);
         return err;
     }
+
+    //Inicializamos valores de la cfg
+    ESP_ERROR_CHECK(nvs_set_i8(nvs_handle, NVS_ALARM, 0));
+    ESP_ERROR_CHECK(nvs_set_i8(nvs_handle, NVS_DOOR, 0));
+    ESP_ERROR_CHECK(nvs_set_i8(nvs_handle, NVS_GAS, 0));
+    ESP_ERROR_CHECK(nvs_set_i8(nvs_handle, NVS_PRESENCE, 0));
 
     err = nvs_commit(nvs_handle);
     nvs_close(nvs_handle);

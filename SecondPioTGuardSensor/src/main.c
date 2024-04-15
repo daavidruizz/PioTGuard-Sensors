@@ -350,25 +350,42 @@ void topicHandler(char *topic, int topic_len, char *data, int data_len){
     cJSON *json = cJSON_GetObjectItem(dataJSON, "value");
     int value = json->valueint;
 
+    nvs_handle_t flash;
+    esp_err_t err = nvs_open("storage", NVS_READWRITE, &flash);
+    
+    if (err != ESP_OK){
+        printf("CAN'T OPEN THE NVS\n");
+        return;
+    }
+
     /*value MUST BE 1 or 0*/
     if(value == 1 || value == 0){
         xSemaphoreTake(mutexSettings, portMAX_DELAY);
         if(strcmp(topic_buffer, CFG_ALARM) == 0){
             settings->alarmSet = value;
+            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_ALARM, value));
             INFO_REQ = 1;
         }else if(strcmp(topic_buffer, CFG_ALL) == 0){
             settings->doorSet = value;
             settings->gasSet = value;
             settings->presenceSet = value;
+            
+            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_DOOR, value));
+            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_GAS, value));
+            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_PRESENCE, value));
+
             INFO_REQ = 1;
         }else if(strcmp(topic_buffer, CFG_DOOR) == 0){
             settings->doorSet = value;
+            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_DOOR, value));
             INFO_REQ = 1;
         }else if(strcmp(topic_buffer, CFG_GAS) == 0){
             settings->gasSet = value;
+            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_GAS, value));
             INFO_REQ = 1;
-        }else if(strcmp(topic_buffer, CFG_PRESENCE) == 0){
+        }else if(strcmp(topic_buffer, NVS_PRESENCE) == 0){
             settings->presenceSet = value;
+            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_PRESENCE, value));
             INFO_REQ = 1;
         }else if(strcmp(topic_buffer, REQ_INFO) == 0){
             INFO_REQ = value;
@@ -378,6 +395,13 @@ void topicHandler(char *topic, int topic_len, char *data, int data_len){
             printf("ERROR: Unidentified topic.\n");
             printf(topic);
         }
+
+        if (err != ESP_OK) {
+            nvs_close(flash);
+            return;
+        }
+
+        nvs_close(flash);
         xSemaphoreGive(mutexSettings);
     }else{
         printf("ERROR. INVALID VALUE OF SETTINGS\n");
@@ -428,7 +452,6 @@ void mqttTask(void *pvParameters) {
         .credentials.client_id = "ESP32",
         .broker.address.uri = MQTT_BROKER,
         .broker.address.port = MQTT_PORT,
-        
         .broker.verification.common_name = cn,
         .broker.verification.certificate = (const char *) MQTTca_crt_start,
         .credentials.authentication.certificate = (const char *) sensorclient_crt_start,
@@ -543,10 +566,10 @@ void app_main(){
 
     settings = (SharedSettings *)malloc(sizeof(SharedSettings));
 
-    settings->alarmSet = 0;
-    settings->doorSet = 0;
-    settings->gasSet = 0;
-    settings->presenceSet = 0;
+    //settings->alarmSet = 0;
+    //settings->doorSet = 0;
+    //settings->gasSet = 0;
+    //settings->presenceSet = 0;
 
     mutexSettings = xSemaphoreCreateMutex();
 
@@ -595,6 +618,15 @@ void app_main(){
     ESP_ERROR_CHECK(nvs_get_str(flash, MQTT_PASS, mqttPass, &required_size));
     //printf(MQTT_PASS": %s; Length: %d\n", mqttPass, required_size);
 
+    
+    ESP_ERROR_CHECK(nvs_get_i8(flash, NVS_ALARM, &settings->alarmSet));
+    ESP_ERROR_CHECK(nvs_get_i8(flash, NVS_DOOR, &settings->doorSet));
+    ESP_ERROR_CHECK(nvs_get_i8(flash, NVS_GAS, &settings->gasSet));
+    ESP_ERROR_CHECK(nvs_get_i8(flash, NVS_PRESENCE, &settings->presenceSet));
+    
+
+    nvs_close(flash);
+    
     //================================================================
     //=======================WIFI INITIALITATION======================
     //================================================================
