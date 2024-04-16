@@ -334,6 +334,36 @@ void publishValues(esp_mqtt_client_handle_t client, SharedMemory *data , cJSON *
     }
 }
 
+int topicToID(char *topic, int topic_len){
+    
+    int id = -1;
+
+    char topic_buffer[topic_len + 1];
+    memcpy(topic_buffer, topic, topic_len);
+    topic_buffer[topic_len] = '\0';
+
+    if(strcmp(topic_buffer, CFG_ALARM) == 0){
+        id = ALARM_ID;
+    }else if(strcmp(topic_buffer, CFG_ALL) == 0){
+        id = ALL_ID; //ALL CFG
+    }else if(strcmp(topic_buffer, CFG_DOOR) == 0){
+        id = DOOR_ID; 
+    }else if(strcmp(topic_buffer, CFG_GAS) == 0){
+        id = GAS_ID;
+    }else if(strcmp(topic_buffer, CFG_PRESENCE) == 0){
+        id = PRESENCE_ID;
+    }else if(strcmp(topic_buffer, REQ_INFO) == 0){
+        id = REQ_INFO_ID; //REQUEST INFO
+    }else if(strcmp(topic_buffer, REBOOT) == 0){
+        id = REBOOT_ID;
+    }else{
+        id = -1;
+        printf("ERROR: Unidentified topic.\n");
+        printf(topic_buffer);
+    }
+    return id;
+}
+
 void topicHandler(char *topic, int topic_len, char *data, int data_len){
     
     cJSON *dataJSON = NULL;
@@ -342,10 +372,6 @@ void topicHandler(char *topic, int topic_len, char *data, int data_len){
     //Debug
     printf("Tema: %.*s\n", topic_len, topic);
     printf("%.*s\n", data_len, data);
-
-    char topic_buffer[topic_len + 1];
-    memcpy(topic_buffer, topic, topic_len);
-    topic_buffer[topic_len] = '\0';
 
     cJSON *json = cJSON_GetObjectItem(dataJSON, "value");
     int value = json->valueint;
@@ -360,52 +386,60 @@ void topicHandler(char *topic, int topic_len, char *data, int data_len){
 
     /*value MUST BE 1 or 0*/
     if(value == 1 || value == 0){
-        xSemaphoreTake(mutexSettings, portMAX_DELAY);
-        if(strcmp(topic_buffer, CFG_ALARM) == 0){
-            settings->alarmSet = value;
-            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_ALARM, value));
-            INFO_REQ = 1;
-        }else if(strcmp(topic_buffer, CFG_ALL) == 0){
-            settings->doorSet = value;
-            settings->gasSet = value;
-            settings->presenceSet = value;
-            
-            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_DOOR, value));
-            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_GAS, value));
-            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_PRESENCE, value));
 
-            INFO_REQ = 1;
-        }else if(strcmp(topic_buffer, CFG_DOOR) == 0){
-            settings->doorSet = value;
-            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_DOOR, value));
-            INFO_REQ = 1;
-        }else if(strcmp(topic_buffer, CFG_GAS) == 0){
-            settings->gasSet = value;
-            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_GAS, value));
-            INFO_REQ = 1;
-        }else if(strcmp(topic_buffer, NVS_PRESENCE) == 0){
-            settings->presenceSet = value;
-            ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_PRESENCE, value));
-            INFO_REQ = 1;
-        }else if(strcmp(topic_buffer, REQ_INFO) == 0){
-            INFO_REQ = value;
-        }else if(strcmp(topic_buffer, REBOOT) == 0){
-            REBOOT_FLAG = value;
-        }else{
-            printf("ERROR: Unidentified topic.\n");
-            printf(topic);
+        int id = topicToID(topic, topic_len);
+
+        xSemaphoreTake(mutexSettings, portMAX_DELAY);
+        switch (id) {
+            case ALARM_ID:
+                settings->alarmSet = value;
+                ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_ALARM, value));
+                INFO_REQ = 1;
+                break;
+            case ALL_ID:
+                settings->doorSet = value;
+                settings->gasSet = value;
+                settings->presenceSet = value;
+                ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_DOOR, value));
+                ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_GAS, value));
+                ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_PRESENCE, value));
+                INFO_REQ = 1;
+                break;
+            case DOOR_ID:
+                settings->doorSet = value;
+                ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_DOOR, value));
+                INFO_REQ = 1;
+                break;
+            case GAS_ID:
+                settings->gasSet = value;
+                ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_GAS, value));
+                INFO_REQ = 1;
+                break;
+            case PRESENCE_ID:
+                settings->presenceSet = value;
+                ESP_ERROR_CHECK(nvs_set_i8(flash, NVS_PRESENCE, value));
+                INFO_REQ = 1;
+                break;
+            case REQ_INFO_ID:
+                INFO_REQ = value;
+                break;
+            case REBOOT_ID:
+                REBOOT_FLAG = value;
+                break;
+            default:
+                printf("ERROR: Unidentified topic.\n");
+                break;
         }
+        xSemaphoreGive(mutexSettings);
 
         if (err != ESP_OK) {
             nvs_close(flash);
             return;
         }
-
-        nvs_close(flash);
-        xSemaphoreGive(mutexSettings);
     }else{
         printf("ERROR. INVALID VALUE OF SETTINGS\n");
     }
+    nvs_close(flash);
     free(dataJSON);
     free(json);
 }
@@ -460,7 +494,6 @@ void mqttTask(void *pvParameters) {
         .credentials.username = mqttUser,
         .credentials.authentication.password = mqttPass, 
         .credentials.authentication.use_secure_element = false,
-        
     };
     esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
 

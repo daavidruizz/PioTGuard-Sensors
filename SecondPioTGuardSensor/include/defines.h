@@ -20,9 +20,13 @@
 #define REQ_INFO                "/info/device/req"
 
 //=======================SENSORS===============================
-#define DOOR_ID             0
-#define GAS_ID              1
-#define PRESENCE_ID         2
+#define ALARM_ID            0
+#define DOOR_ID             1
+#define GAS_ID              2
+#define PRESENCE_ID         3
+#define ALL_ID              4
+#define REQ_INFO_ID         5
+#define REBOOT_ID           6
 #define DOOR_SENSOR         "Door Sensor"
 #define PRESENCE_SENSOR     "Presence Sensor"
 #define GAS_SENSOR          "Gas Sensor"
