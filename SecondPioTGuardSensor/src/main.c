@@ -19,7 +19,6 @@
 #include "esp_system.h" // Para esp_chip_info
 #include "mbedtls/debug.h"
 #include "nvs_write.h"
-//prueba de que todo bien main
 
 #define MAX_LENGTH 32
 
@@ -292,7 +291,7 @@ void GasSensorTask(void *pvParameters){
 
 void publishSettings(esp_mqtt_client_handle_t client, SharedSettings *settings, cJSON *json, char *json_str){
     jsonSrtSettings(json, &json_str, settings);
-    esp_mqtt_client_publish(client, DEVICE_SENSORS, json_str,  0,  0,  0);
+    esp_mqtt_client_publish(client, DEVICE_SENSORS, json_str,  0,  2,  0);
 }
 
 void publishValues(esp_mqtt_client_handle_t client, SharedMemory *data , cJSON *json, char *json_str){
@@ -306,19 +305,19 @@ void publishValues(esp_mqtt_client_handle_t client, SharedMemory *data , cJSON *
             switch (data->sensorID){
                 case DOOR_ID:
                     if(settings->doorSet == 1 && !DOOR_TRIGGER){
-                        esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  0,  0);
+                        esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  2,  0);
                     }
                     break;
 
                 case GAS_ID:
                     if(settings->gasSet == 1 && GAS_TRIGGER > 2000){
-                        esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  0,  0);
+                        esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  2,  0);
                     }
                     break;
 
                 case PRESENCE_ID:
                     if(settings->presenceSet == 1 && PRESENCE_TRIGGER){
-                        esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  0,  0);
+                        esp_mqtt_client_publish(client, ALARM_TRIGGER, json_str,  0,  2,  0);
                     }
                     break;
 
@@ -363,7 +362,7 @@ int topicToID(char *topic, int topic_len){
     }
     return id;
 }
-
+//TODO SOLUCIONAR SI NO LLEGA UN JSON
 void topicHandler(char *topic, int topic_len, char *data, int data_len){
     
     cJSON *dataJSON = NULL;
@@ -374,6 +373,14 @@ void topicHandler(char *topic, int topic_len, char *data, int data_len){
     printf("%.*s\n", data_len, data);
 
     cJSON *json = cJSON_GetObjectItem(dataJSON, "value");
+
+    if(json == NULL){
+        printf("JSON error, Not a JSON\n");
+        free(dataJSON);
+        free(json);
+        return;
+    }
+
     int value = json->valueint;
 
     nvs_handle_t flash;
@@ -381,6 +388,8 @@ void topicHandler(char *topic, int topic_len, char *data, int data_len){
     
     if (err != ESP_OK){
         printf("CAN'T OPEN THE NVS\n");
+        free(dataJSON);
+        free(json);
         return;
     }
 
@@ -434,6 +443,8 @@ void topicHandler(char *topic, int topic_len, char *data, int data_len){
 
         if (err != ESP_OK) {
             nvs_close(flash);
+            free(dataJSON);
+            free(json);
             return;
         }
     }else{
@@ -520,16 +531,16 @@ void mqttTask(void *pvParameters) {
     jsonSrtInit(&jsonLOG, &jsonSettings);
 
     /*SUBSCRIPTIONS*/
-    esp_mqtt_client_subscribe(client, REQ_INFO,  0);
+    esp_mqtt_client_subscribe(client, REQ_INFO,  2);
 
-    esp_mqtt_client_subscribe(client, CFG_ALARM,  0);
-    esp_mqtt_client_subscribe(client, CFG_DOOR,  0);
-    esp_mqtt_client_subscribe(client, CFG_GAS,  0);
-    esp_mqtt_client_subscribe(client, CFG_PRESENCE,  0);
-    esp_mqtt_client_subscribe(client, CFG_ALL,  0);
-    esp_mqtt_client_subscribe(client, REBOOT,  0);
+    esp_mqtt_client_subscribe(client, CFG_ALARM,  2);
+    esp_mqtt_client_subscribe(client, CFG_DOOR,  2);
+    esp_mqtt_client_subscribe(client, CFG_GAS,  2);
+    esp_mqtt_client_subscribe(client, CFG_PRESENCE,  2);
+    esp_mqtt_client_subscribe(client, CFG_ALL,  2);
+    esp_mqtt_client_subscribe(client, REBOOT,  2);
 
-    esp_mqtt_client_publish(client, DEVICE_INFO, "POWERED ON", 10, 0, 0);
+    esp_mqtt_client_publish(client, DEVICE_INFO, "POWERED ON", 10, 2, 0);
     
     SharedMemory dataToSend;
 
@@ -544,7 +555,7 @@ void mqttTask(void *pvParameters) {
 
         if(REBOOT_FLAG){
             printf("REBOOTING...\n");
-            esp_mqtt_client_publish(client, DEVICE_INFO, "REBOOTING", 9, 0, 0);
+            esp_mqtt_client_publish(client, DEVICE_INFO, "REBOOTING", 9, 2, 0);
             REBOOT_FLAG = 0;
             vTaskDelay(pdMS_TO_TICKS(3000));
             esp_restart();

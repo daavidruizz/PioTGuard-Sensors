@@ -1,5 +1,5 @@
 //=====================MQTT DEFINES============================
-#define MQTT_BROKER     "mqtts://rzzz.ddns.net"  //"mqtts://rzzz.ddns.net"
+#define MQTT_BROKER     "mqtts://192.168.1.211"  //"mqtts://rzzz.ddns.net"
 #define MQTT_PORT       8883
     //TOPICS
 #define GAS_TOPIC_VALUE         "/info/sensor/gas"
