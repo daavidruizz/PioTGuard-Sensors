@@ -5,6 +5,6 @@ FILE(GLOB_RECURSE app_sources ${CMAKE_SOURCE_DIR}/src/*.*)
 
 idf_component_register(SRCS ${app_sources})
 
-target_add_binary_data(${COMPONENT_TARGET} "../certs/ca.crt" TEXT)
+target_add_binary_data(${COMPONENT_TARGET} "../certs/mqtt_ca.crt" TEXT)
 target_add_binary_data(${COMPONENT_TARGET} "../certs/sensor.crt" TEXT)
 target_add_binary_data(${COMPONENT_TARGET} "../certs/sensor.key" TEXT)

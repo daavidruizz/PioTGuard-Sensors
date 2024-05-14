@@ -63,7 +63,7 @@ char mqttPass[MAX_LENGTH];
 //================================================================
 //=======================CERTIFICATES=============================
 //================================================================
-extern const uint8_t MQTTca_crt_start[] asm("_binary_ca_crt_start");
+extern const uint8_t MQTTca_crt_start[] asm("_binary_mqtt_ca_crt_start");
 extern const uint8_t sensorclient_crt_start[] asm("_binary_sensor_crt_start");
 extern const uint8_t sensorclient_key_start[] asm("_binary_sensor_key_start");
 
@@ -100,6 +100,10 @@ void getDateTimeString(char *dateTimeString) {
 }
 
 void DateTime(){
+    //zona horaria a CET/CEST para España
+    setenv("TZ", "CET-1CEST,M3.5.0/2,M10.5.0/3", 1);
+    tzset();
+    
     sntp_setoperatingmode(SNTP_OPMODE_POLL);
     sntp_setservername(0, "pool.ntp.org");
     sntp_init(); //Horario verano
@@ -560,7 +564,7 @@ void mqttTask(void *pvParameters) {
             vTaskDelay(pdMS_TO_TICKS(3000));
             esp_restart();
         }
-        vTaskDelay(pdMS_TO_TICKS(300));
+        vTaskDelay(pdMS_TO_TICKS(1000)); //1s para que cargue bien todo el refresco de la app
     }
 }
 
