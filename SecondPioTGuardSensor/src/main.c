@@ -296,6 +296,7 @@ void GasSensorTask(void *pvParameters){
 void publishSettings(esp_mqtt_client_handle_t client, SharedSettings *settings, cJSON *json, char *json_str){
     jsonSrtSettings(json, &json_str, settings);
     esp_mqtt_client_publish(client, DEVICE_SENSORS, json_str,  0,  2,  0);
+    free(json_str);
 }
 
 void publishValues(esp_mqtt_client_handle_t client, SharedMemory *data , cJSON *json, char *json_str){
@@ -564,7 +565,14 @@ void mqttTask(void *pvParameters) {
             vTaskDelay(pdMS_TO_TICKS(3000));
             esp_restart();
         }
-        vTaskDelay(pdMS_TO_TICKS(1000)); //1s para que cargue bien todo el refresco de la app
+        //print_memory_usage();
+        /*CONTROL LED AND WAIT TO REFRESH APP*/
+        // Encender el LED
+        gpio_set_level(LED_GPIO_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));  // Esperar 150 ms
+        // Apagar el LED
+        gpio_set_level(LED_GPIO_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(950)); //1s para que cargue bien todo el refresco de la app
     }
 }
 
@@ -721,6 +729,9 @@ void app_main(){
     io_conf.pin_bit_mask = (1ULL << DOOR_SERNSOR_PIN) | (1ULL << PRESENCE_SENSOR_PIN);
     gpio_config(&io_conf);
 
+    // Configurar el pin GPIO2 como salida digital
+    esp_rom_gpio_pad_select_gpio(LED_GPIO_PIN);
+    gpio_set_direction(LED_GPIO_PIN, GPIO_MODE_OUTPUT);
     //ADC1
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(GAS_SENSOR_PIN, ADC_ATTEN_DB_11);

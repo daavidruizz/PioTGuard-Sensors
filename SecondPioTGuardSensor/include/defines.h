@@ -36,6 +36,7 @@
 #define GAS_SENSOR_PIN      ADC1_CHANNEL_0
 #define DOOR_SERNSOR_PIN    GPIO_NUM_4
 #define PRESENCE_SENSOR_PIN GPIO_NUM_13
+#define LED_GPIO_PIN        GPIO_NUM_2
 
 //========================DEBUG================================
 #define MBEDTLS_DEBUG_LEVEL 3
