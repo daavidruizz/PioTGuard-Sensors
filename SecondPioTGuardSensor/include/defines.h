@@ -1,3 +1,12 @@
+/*
+ * PioTGuard-Sensors
+ * David Ruiz Luque
+ * Universidad de Malaga
+ * daavidruiz01@outlook.com
+ * 2024-06-05
+ */
+
+
 //=====================MQTT DEFINES============================
 #define MQTT_BROKER     "mqtts://192.168.1.211"  //"mqtts://rzzz.ddns.net"
 #define MQTT_PORT       8883

@@ -1,3 +1,11 @@
+/*
+ * PioTGuard-Sensors
+ * David Ruiz Luque
+ * Universidad de Malaga
+ * daavidruiz01@outlook.com
+ * 2024-06-05
+ */
+
 #ifndef NVS_WRITE_H
 #define NVS_WRITE_H
 #include "nvs.h"

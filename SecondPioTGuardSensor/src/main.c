@@ -1,3 +1,10 @@
+/*
+ * PioTGuard-Sensors
+ * David Ruiz Luque
+ * Universidad de Malaga
+ * daavidruiz01@outlook.com
+ * 2024-06-05
+ */
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
